@@ -211,9 +211,35 @@ def explanation_node(state: dict) -> dict:
         return {**state, "explanations": {"explanations": []}}
 
 
-# ============================================================
-# BUILD LANGGRAPH WORKFLOW
-# ============================================================
+def route_to_customer(state: dict) -> str:
+    if "customer_agent" in state.get("selected_agents", []):
+        return "customer_agent"
+    return "knowledge_agent"
+
+
+def route_to_knowledge(state: dict) -> str:
+    if "knowledge_agent" in state.get("selected_agents", []):
+        return "knowledge_agent"
+    return "sentiment_agent"
+
+
+def route_to_sentiment(state: dict) -> str:
+    if "sentiment_agent" in state.get("selected_agents", []):
+        return "sentiment_agent"
+    return "risk_agent"
+
+
+def route_to_risk(state: dict) -> str:
+    if "risk_agent" in state.get("selected_agents", []):
+        return "risk_agent"
+    return "opportunity_agent"
+
+
+def route_to_opportunity(state: dict) -> str:
+    if "opportunity_agent" in state.get("selected_agents", []):
+        return "opportunity_agent"
+    return "recommendation"
+
 
 def build_graph():
     """
@@ -221,13 +247,12 @@ def build_graph():
 
     Graph topology:
         START -> load_context -> planner_router ->
-        customer_agent -> knowledge_agent -> sentiment_agent ->
-        risk_agent -> opportunity_agent ->
+        [customer_agent] -> [knowledge_agent] -> [sentiment_agent] ->
+        [risk_agent] -> [opportunity_agent] ->
         recommendation -> explanation -> END
-
-    Each analysis agent node checks if it was selected by the router.
-    If not selected, it returns the state unchanged (skip).
-    recommendation and explanation nodes always execute.
+        
+    Each edge is conditional: if the target agent is not selected,
+    the workflow dynamically bypasses it to the next node in the sequence.
     """
     workflow = StateGraph(PlannerState)
 
@@ -245,18 +270,62 @@ def build_graph():
     # Set entry point
     workflow.set_entry_point("load_context")
 
-    # Define edges (sequential flow with skip logic inside nodes)
+    # Connect context loading and router
     workflow.add_edge("load_context", "planner_router")
-    workflow.add_edge("planner_router", "customer_agent")
-    workflow.add_edge("customer_agent", "knowledge_agent")
-    workflow.add_edge("knowledge_agent", "sentiment_agent")
-    workflow.add_edge("sentiment_agent", "risk_agent")
-    workflow.add_edge("risk_agent", "opportunity_agent")
+    
+    # Conditional dynamic routing chain
+    workflow.add_conditional_edges(
+        "planner_router",
+        route_to_customer,
+        {
+            "customer_agent": "customer_agent",
+            "knowledge_agent": "knowledge_agent"
+        }
+    )
+
+    workflow.add_conditional_edges(
+        "customer_agent",
+        route_to_knowledge,
+        {
+            "knowledge_agent": "knowledge_agent",
+            "sentiment_agent": "sentiment_agent"
+        }
+    )
+
+    workflow.add_conditional_edges(
+        "knowledge_agent",
+        route_to_sentiment,
+        {
+            "sentiment_agent": "sentiment_agent",
+            "risk_agent": "risk_agent"
+        }
+    )
+
+    workflow.add_conditional_edges(
+        "sentiment_agent",
+        route_to_risk,
+        {
+            "risk_agent": "risk_agent",
+            "opportunity_agent": "opportunity_agent"
+        }
+    )
+
+    workflow.add_conditional_edges(
+        "risk_agent",
+        route_to_opportunity,
+        {
+            "opportunity_agent": "opportunity_agent",
+            "recommendation": "recommendation"
+        }
+    )
+
     workflow.add_edge("opportunity_agent", "recommendation")
     workflow.add_edge("recommendation", "explanation")
     workflow.add_edge("explanation", END)
 
     return workflow.compile()
+
+
 
 
 # Build the graph at module load time

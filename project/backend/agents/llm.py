@@ -141,3 +141,23 @@ def query_llm_json(prompt: str, system_prompt: str = "", model: str = None) -> d
         print(f"[LLM] Failed to parse JSON from LLM response: {e}")
         print(f"[LLM] Raw response was: {raw[:200]}")
         return {}
+
+
+def get_llm():
+    """
+    Return a LangChain Ollama LLM instance using the local model.
+    
+    Returns:
+        Ollama LLM instance from langchain_community
+    """
+    model_name = get_available_chat_model()
+    try:
+        from langchain_community.llms import Ollama
+        return Ollama(
+            base_url="http://localhost:11434",
+            model=model_name
+        )
+    except Exception as e:
+        print(f"[LLM] Failed to import/instantiate LangChain Ollama LLM: {e}")
+        return None
+

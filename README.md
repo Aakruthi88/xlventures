@@ -99,7 +99,8 @@ uvicorn project.backend.main:app --reload
 The server will start on [http://127.0.0.1:8000](http://127.0.0.1:8000).
 
 ### 5. Running the Tests
-To verify all components (data, stubs, Graph routing, and web endpoints) are functioning correctly, run the validation script:
+To verify all components (data, stubs, Graph routing, and web endpoints) are functioning correctly, run the integration test suite:
 ```bash
-python scripts/validate_phase5.py
+python tests/test_phase_1_to_4.py
 ```
+
