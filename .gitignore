@@ -1,18 +1,39 @@
-# Byte-compiled / optimized / DLL files
+# ============================
+# Python
+# ============================
 __pycache__/
 *.py[cod]
 *$py.class
 
-# Environments
+# ============================
+# Virtual Environments
+# ============================
 .env
-.venv
+.venv/
 venv/
 ENV/
 env/
 
+# ============================
 # Databases
+# ============================
 project/backend/database/sqlite.db
+project/backend/database/chromadb/
 
-# OS metadata
+# ============================
+# Node.js
+# ============================
+node_modules/
+frontend/node_modules/
+project/backend/package-lock.json
+
+# ============================
+# Frontend Build Output
+# ============================
+frontend/dist/
+
+# ============================
+# Operating System Files
+# ============================
 .DS_Store
 Thumbs.db
