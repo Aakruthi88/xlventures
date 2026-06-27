@@ -1,0 +1,82 @@
+[
+  {
+    "company": "ABC Manufacturing",
+    "last_meeting_date": "2026-05-15",
+    "last_login_date": "2026-06-20",
+    "customer_owner": "Sarah Mitchell",
+    "support_tickets_open": 7,
+    "notes": "Q1 QBR postponed twice by client. Champion (VP of HR, Priya Sharma) left in April. New VP not responding to outreach. Account at high risk."
+  },
+  {
+    "company": "Pinnacle Healthcare",
+    "last_meeting_date": "2026-04-28",
+    "last_login_date": "2026-06-15",
+    "customer_owner": "James Rodriguez",
+    "support_tickets_open": 9,
+    "notes": "Multiple critical tickets unresolved 3+ weeks. HIPAA compliance concerns raised. CFO mentioned budget review in Q3. Last QBR cancelled by client."
+  },
+  {
+    "company": "NovaTech Solutions",
+    "last_meeting_date": "2026-06-10",
+    "last_login_date": "2026-06-13",
+    "customer_owner": "Sarah Mitchell",
+    "support_tickets_open": 3,
+    "notes": "Was daily active until mid-May - usage dropped sharply. Engineering team restructured, new CTO started June 1. No complaints but engagement fading."
+  },
+  {
+    "company": "GreenLeaf Retail",
+    "last_meeting_date": "2026-06-05",
+    "last_login_date": "2026-06-22",
+    "customer_owner": "David Chen",
+    "support_tickets_open": 2,
+    "notes": "Seasonal business - Q3 is slow period. Mentioned exploring competitor PeopleForce during last check-in. Using only basic features."
+  },
+  {
+    "company": "Meridian Logistics",
+    "last_meeting_date": "2026-06-24",
+    "last_login_date": "2026-06-27",
+    "customer_owner": "Emily Watson",
+    "support_tickets_open": 0,
+    "notes": "Extremely engaged. Opening 2 new distribution centers in Q3 - 150+ new employees. Asked about Enterprise features and API rate limits. Strong upsell candidate."
+  },
+  {
+    "company": "Atlas Finserv",
+    "last_meeting_date": "2026-06-20",
+    "last_login_date": "2026-06-26",
+    "customer_owner": "Emily Watson",
+    "support_tickets_open": 1,
+    "notes": "Power user team. Compliance team loves audit trail. Asked about advanced analytics module. Growth plan may be limiting API usage soon."
+  },
+  {
+    "company": "Orion Enterprises",
+    "last_meeting_date": "2026-06-18",
+    "last_login_date": "2026-06-27",
+    "customer_owner": "James Rodriguez",
+    "support_tickets_open": 0,
+    "notes": "Model customer. 96% seat utilization. Renewed early last cycle with 2-year commitment. Potential case study and referral candidate."
+  },
+  {
+    "company": "Vanguard Media",
+    "last_meeting_date": "2026-06-22",
+    "last_login_date": "2026-06-26",
+    "customer_owner": "David Chen",
+    "support_tickets_open": 0,
+    "notes": "Creative team uses dashboards extensively for workforce analytics. Recently featured platform in industry blog. Happy customer - nurture relationship."
+  },
+  {
+    "company": "FreshHire Staffing",
+    "last_meeting_date": "2026-06-16",
+    "last_login_date": "2026-06-25",
+    "customer_owner": "Sarah Mitchell",
+    "support_tickets_open": 2,
+    "notes": "Onboarded 3 weeks ago. Still in implementation phase. IT team setting up SSO and bulk user import. Normal new-customer ramp-up trajectory."
+  },
+  {
+    "company": "BrightPath Education",
+    "last_meeting_date": "2026-06-19",
+    "last_login_date": "2026-06-23",
+    "customer_owner": "David Chen",
+    "support_tickets_open": 2,
+    "notes": "Onboarded 2 weeks ago. University HR team - academic calendar impacts adoption. Requested training materials for department heads. Needs guided onboarding."
+  }
+]

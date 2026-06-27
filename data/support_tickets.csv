@@ -1,0 +1,31 @@
+TicketID,Company,Subject,Priority,Status,CreatedDate
+T027,Orion Enterprises,Minor formatting issue in scheduled reports,Low,Resolved,2026-05-14
+T030,Meridian Logistics,Feature request: bulk shift scheduling import,Low,Resolved,2026-05-26
+T028,Vanguard Media,Request: additional dashboard color themes,Low,Resolved,2026-05-31
+T024,FreshHire Staffing,Bulk employee CSV import column mapping not saving correctly,Medium,Open,2026-05-31
+T014,Pinnacle Healthcare,Role-based access control not reflecting updated org hierarchy,Medium,Open,2026-05-31
+T019,NovaTech Solutions,API webhook delivery intermittent failures to Slack integration,Low,Pending,2026-06-01
+T015,Pinnacle Healthcare,SSO login failures affecting shift-based staff,Critical,Open,2026-06-01
+T025,BrightPath Education,SSO configuration error during initial Azure AD setup,Medium,Pending,2026-06-02
+T016,Pinnacle Healthcare,HIPAA audit log export missing timestamps on bulk operations,Critical,Pending,2026-06-03
+T011,Pinnacle Healthcare,Request for custom compliance report template for audit,Low,Pending,2026-06-03
+T005,ABC Manufacturing,Employee data sync delay between HRIS and platform exceeding 24 hours,High,Open,2026-06-04
+T001,ABC Manufacturing,SAP integration sync failing intermittently during payroll batch,High,Open,2026-06-05
+T023,FreshHire Staffing,SSO configuration error during initial Azure AD setup,Medium,Pending,2026-06-06
+T013,Pinnacle Healthcare,Bulk user import timing out for batches above 300 records,High,Open,2026-06-07
+T006,ABC Manufacturing,Bulk user import timing out for batches above 300 records,High,Pending,2026-06-07
+T010,Pinnacle Healthcare,API rate limit errors during peak payroll processing hours,High,Open,2026-06-08
+T026,BrightPath Education,Bulk employee CSV import column mapping not saving correctly,Medium,Open,2026-06-08
+T029,Atlas Finserv,Quarterly compliance export formatting update,Low,Resolved,2026-06-10
+T021,GreenLeaf Retail,Report generation timeout on datasets exceeding 10k records,Medium,Open,2026-06-13
+T022,Atlas Finserv,Feature request: advanced audit trail filtering by department,Low,Pending,2026-06-14
+T017,NovaTech Solutions,Custom workflow automation triggers not firing on status change,Medium,Pending,2026-06-15
+T012,Pinnacle Healthcare,Employee data sync delay between HRIS and platform exceeding 24 hours,High,Pending,2026-06-18
+T009,Pinnacle Healthcare,Dashboard analytics not loading for newly onboarded team members,Medium,Open,2026-06-18
+T003,ABC Manufacturing,API rate limit errors during peak payroll processing hours,High,Open,2026-06-18
+T018,NovaTech Solutions,Report generation timeout on datasets exceeding 10k records,Medium,Open,2026-06-21
+T004,ABC Manufacturing,Request for custom compliance report template for audit,Low,Open,2026-06-21
+T020,GreenLeaf Retail,Custom workflow automation triggers not firing on status change,Medium,Open,2026-06-22
+T008,Pinnacle Healthcare,SAP integration sync failing intermittently during payroll batch,High,Open,2026-06-23
+T007,ABC Manufacturing,Role-based access control not reflecting updated org hierarchy,Medium,Open,2026-06-24
+T002,ABC Manufacturing,Dashboard analytics not loading for newly onboarded team members,Medium,Open,2026-06-25

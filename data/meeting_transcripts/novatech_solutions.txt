@@ -1,0 +1,28 @@
+Meeting Transcript - NovaTech Solutions
+Date: June 24, 2026
+Attendees: Mark Fernandez (VP Engineering, NovaTech Solutions), Sarah Mitchell (CSM, XLVentures)
+Duration: 18 minutes
+
+Sarah: Hey Mark, thanks for jumping on. I noticed your team's usage has dipped a bit over the past few weeks - just wanted to check in and see how things are going.
+
+Mark: Oh yeah, things are fine. No major complaints or anything. We've just been, you know, heads-down on a big product release so the team hasn't had much bandwidth to explore new features. The platform is working fine for what we use it for.
+
+Sarah: Got it, makes sense. I saw you had a CTO transition recently - how's that going?
+
+Mark: Yeah, Vikram started June 1st. He's still getting up to speed on all our tooling. He hasn't really had a chance to look at the HR platform yet, to be honest. He's been focused on the engineering stack first, which is fair.
+
+Sarah: Totally understandable. Have you had a chance to check out the new workflow automation features we launched last month? They're really designed for engineering-heavy orgs like yours.
+
+Mark: Um, not really. I saw the email about it but we just haven't had the bandwidth. I think a couple of people on the team tried it and ran into some issues with the trigger configurations? They filed a ticket I think. But it's not really been a priority.
+
+Sarah: No worries. If it would help, we could set up a quick walkthrough session with your team to get them up to speed.
+
+Mark: Maybe, yeah. Let me check with Vikram first. He might want to do a broader review of all our SaaS tools anyway. A colleague of his at his previous company used a platform that auto-generates compliance reports, and he was pretty impressed by that. So he might want to do some comparisons.
+
+Sarah: Sure, we actually have compliance reporting capabilities too - happy to demo those. Should I send over some materials?
+
+Mark: Yeah, go ahead and send them. I'll forward to Vikram. No promises on timeline though - like I said, we're pretty buried right now.
+
+Sarah: Totally understand. I'll send those over today and we can reconnect in a couple of weeks?
+
+Mark: Sounds good. Thanks, Sarah.

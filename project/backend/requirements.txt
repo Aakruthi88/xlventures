@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+pandas
+chromadb
+sentence-transformers
+pydantic
+python-multipart
+groq
+requests
+langgraph
+langchain
+langchain-community
+ollama

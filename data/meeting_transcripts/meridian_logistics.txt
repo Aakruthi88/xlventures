@@ -1,0 +1,24 @@
+Meeting Transcript - Meridian Logistics
+Date: June 22, 2026
+Attendees: Anita Desai (COO, Meridian Logistics), Emily Watson (CSM, XLVentures)
+Duration: 22 minutes
+
+Emily: Anita, great to see you again! How's everything going at Meridian?
+
+Anita: Emily, honestly, things are going really well. Your platform has completely transformed how we handle onboarding at our main distribution center. What used to take us three weeks per batch of new hires is now down to about four days. The HR team loves it.
+
+Emily: That's amazing to hear! I saw your usage numbers - 91% seat activation. That's one of the highest in our entire customer base.
+
+Anita: Yeah, the team's really adopted it. Actually, that's partly why I wanted to chat. We're opening two new distribution centers next quarter - one in Chennai and one in Hyderabad. That's roughly 150 new employees we'll need to onboard, and we'd love to replicate what we've done at the Bangalore center.
+
+Emily: That's exciting! Your current Starter plan supports up to 80 seats. You'd definitely need to scale up for that kind of growth.
+
+Anita: Right, exactly. So I wanted to understand what the Growth or Enterprise options look like. We're especially interested in the advanced analytics module - our operations team has been asking for workforce productivity dashboards, and right now we're kind of jury-rigging things with the basic reports. Also, we'd love better API access. Our warehouse management system is custom-built and we want to push employee scheduling data directly into your platform.
+
+Emily: Both of those are included in the Growth plan, and Enterprise gives you unlimited API calls plus custom integrations support. I can put together a comparison for you.
+
+Anita: That would be great. And honestly? Budget isn't really the constraint here - our CEO is fully behind this expansion. We just need to make sure the migration to a higher plan is smooth and doesn't disrupt the existing workflows. Can we do a phased rollout?
+
+Emily: Absolutely. We actually have a dedicated migration team for exactly that. Let me loop them in and we can set up a planning session.
+
+Anita: Perfect. Let's aim for next week if possible - we want to have everything in place before the new centers go live in September.

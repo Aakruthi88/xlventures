@@ -1,0 +1,24 @@
+Meeting Transcript - ABC Manufacturing
+Date: June 24, 2026
+Attendees: Rajesh Kapoor (HR Director, ABC Manufacturing), Sarah Mitchell (CSM, XLVentures)
+Duration: 28 minutes
+
+Sarah: Hi Rajesh, thanks for making time today. I know it's been a while since we last connected - how are things going on your end?
+
+Rajesh: Yeah, hi Sarah. Honestly? It's been a rough couple of months. Since Priya left in April, there's been kind of a leadership vacuum around the HR tech stack. Nobody's really championing the platform internally anymore, and I've been stretched thin trying to cover her responsibilities on top of mine.
+
+Sarah: I'm sorry to hear about Priya's departure. She was definitely a strong advocate for the platform. How's the rest of the team adapting?
+
+Rajesh: Not great, if I'm being honest. The SAP integration has been painfully slow - like, my team spends probably 20 minutes every morning just waiting for the payroll sync to complete. We've raised tickets about it but nothing's really changed. And the dashboards? Most of my team has just stopped using them altogether. They export everything to Excel because the analytics take forever to load, especially for the newer hires who were never properly trained on it.
+
+Sarah: That's concerning. Are they using the self-service reporting features at all?
+
+Rajesh: Barely. Look, I'll be straight with you - our renewal is coming up in about three weeks and I've been asked by my VP to evaluate two other vendors before we commit. I need to show tangible ROI, and right now the numbers aren't there. We're paying for 500 seats and I think maybe 160 people actually log in regularly. That's not a conversation I want to have with finance.
+
+Sarah: I appreciate you being upfront about that. What would need to change for you to feel confident about renewing?
+
+Rajesh: Honestly, three things. Fix the SAP integration - that's non-negotiable. Get someone to actually train my team on the dashboards and analytics, because the adoption is embarrassing. And I need some kind of compliance reporting template for our manufacturing audit that's coming up in September. If we can't get those sorted, I don't see how I justify the spend. Management is already looking at competitors like BambooHR and Workday - and frankly, their demos looked pretty slick.
+
+Sarah: Those are all actionable items. Let me take these back to the team and get you a concrete plan by end of week.
+
+Rajesh: I appreciate that, Sarah. But I need it fast - we don't have a lot of runway here.
