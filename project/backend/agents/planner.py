@@ -204,7 +204,12 @@ def explanation_node(state: dict) -> dict:
     """Always runs - explains recommendations with evidence."""
     try:
         print("[Planner] Running explanation_agent...")
-        result = explanation_agent.explain(state.get("recommendations", {}))
+        result = explanation_agent.explain(
+            state.get("recommendations", {}),
+            customer_summary=state.get("customer_summary", {}),
+            risks=state.get("risks", {}),
+            knowledge_docs=state.get("knowledge", {})
+        )
         return {**state, "explanations": result}
     except Exception as e:
         print(f"[Planner] explanation_agent failed: {e}")
@@ -413,7 +418,12 @@ def run_sequential(session_id: str) -> dict:
         print(f"[Planner] recommendation_agent failed: {e}")
 
     try:
-        result["explanations"] = explanation_agent.explain(result["recommendations"])
+        result["explanations"] = explanation_agent.explain(
+            result["recommendations"],
+            customer_summary=result["customer_summary"],
+            risks=result["risks"],
+            knowledge_docs=result["knowledge"]
+        )
     except Exception as e:
         print(f"[Planner] explanation_agent failed: {e}")
 
