@@ -165,3 +165,90 @@ def get_graph_structure():
     return planner.get_graph_structure()
 
 
+@app.get("/customers")
+def get_customers():
+    from database import repository as repo
+    from datetime import datetime
+    customers = repo.get_all_customers()
+    formatted = []
+    for c in customers:
+        days_to_renewal = 0
+        if c.get("renewal_date"):
+            try:
+                renewal_date = datetime.strptime(c["renewal_date"], "%Y-%m-%d")
+                today = datetime.now()
+                today = today.replace(hour=0, minute=0, second=0, microsecond=0)
+                days_to_renewal = (renewal_date - today).days
+            except Exception:
+                pass
+        formatted.append({
+            "id": c.get("customer_id"),
+            "name": c.get("company"),
+            "plan": c.get("plan"),
+            "industry": c.get("industry"),
+            "renewalDate": c.get("renewal_date"),
+            "healthScore": c.get("health_score", 0),
+            "daysToRenewal": days_to_renewal,
+            "licensedUsers": c.get("licensed_users", 0),
+            "activeUsers": c.get("active_users", 0),
+            "openSupportTickets": c.get("support_tickets_open", 0),
+            "recentMeetingDate": c.get("recent_meeting_date", ""),
+            "owner": c.get("customer_owner", ""),
+        })
+    return formatted
+
+
+@app.get("/customers/{customer_id}")
+def get_customer_detail(customer_id: str):
+    from database import repository as repo
+    from datetime import datetime
+    c = repo.get_customer_by_id(customer_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Customer not found")
+        
+    days_to_renewal = 0
+    if c.get("renewal_date"):
+        try:
+            renewal_date = datetime.strptime(c["renewal_date"], "%Y-%m-%d")
+            today = datetime.now()
+            today = today.replace(hour=0, minute=0, second=0, microsecond=0)
+            days_to_renewal = (renewal_date - today).days
+        except Exception:
+            pass
+            
+    return {
+        "id": c.get("customer_id"),
+        "name": c.get("company"),
+        "plan": c.get("plan"),
+        "industry": c.get("industry"),
+        "renewalDate": c.get("renewal_date"),
+        "healthScore": c.get("health_score", 0),
+        "daysToRenewal": days_to_renewal,
+        "licensedUsers": c.get("licensed_users", 0),
+        "activeUsers": c.get("active_users", 0),
+        "openSupportTickets": c.get("support_tickets_open", 0),
+        "recentMeetingDate": c.get("recent_meeting_date", ""),
+        "owner": c.get("customer_owner", ""),
+    }
+
+
+@app.get("/recommendations/{customer_id}")
+def get_recommendations_by_customer(customer_id: str):
+    from database import repository as repo
+    recs = repo.get_recommendations_by_customer(customer_id)
+    formatted_recs = []
+    for r in recs:
+        formatted_recs.append({
+            "id": r.get("id"),
+            "action": r.get("action_description"),
+            "priority": r.get("priority", "Medium"),
+            "confidence": r.get("confidence", 0.9)
+        })
+    return {"recommendations": formatted_recs, "explanations": []}
+
+
+@app.get("/analytics")
+def get_analytics():
+    return memory_agent.get_analytics()
+
+

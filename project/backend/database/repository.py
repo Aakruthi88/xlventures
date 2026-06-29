@@ -64,6 +64,12 @@ def get_customer_by_company(company: str) -> Optional[Dict[str, Any]]:
     return _execute_query(query, (company,), fetch_one=True)
 
 
+def get_all_customers() -> List[Dict[str, Any]]:
+    """Retrieve all customers in the database."""
+    query = "SELECT * FROM customers"
+    return _execute_query(query, (), fetch=True)
+
+
 def update_customer_health(customer_id: str, new_score: int) -> None:
     """Update customer health score."""
     query = "UPDATE customers SET health_score = %s WHERE customer_id = %s"
@@ -102,6 +108,12 @@ def add_recommendation(rec_id: str, session_id: str, customer_id: str,
     VALUES (%s, %s, %s, %s, %s, %s)
     """
     _execute_query(query, (rec_id, session_id, customer_id, action_description, priority, confidence))
+
+
+def get_recommendations_by_customer(customer_id: str) -> List[Dict[str, Any]]:
+    """Retrieve all recommendations for a customer."""
+    query = "SELECT * FROM recommendations WHERE customer_id = %s"
+    return _execute_query(query, (customer_id,), fetch=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
