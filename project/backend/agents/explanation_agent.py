@@ -7,12 +7,50 @@ linking evidence back to specific data sources.
 Phase 3: Returns hardcoded mock data.
 Phase 12: Parses response from recommendation_agent, validates
           evidence, and enforces output format compliance.
+Refactored: Inherits from BaseAgent for dynamic orchestration.
 """
 
+from typing import Any, Dict, List
 
-def explain(llm_response: dict = None, customer_summary: dict = None,
-            risks: dict = None, knowledge_docs: dict = None,
-            recommendations: dict = None) -> dict:
+from agents.base_agent import BaseAgent
+
+
+class ExplanationAgent(BaseAgent):
+    """
+    Validates, cleans, and formats explanations from the
+    recommendation agent, linking evidence to source data.
+    """
+
+    def __init__(self):
+        super().__init__(
+            name="explanation_agent",
+            description="Validates and formats explainable reasoning for each recommendation with evidence tracing.",
+            tools=[]
+        )
+
+    def execute(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute explanation validation and formatting.
+
+        Args:
+            state: Should contain 'recommendations', 'customer_summary',
+                   'risks', and 'knowledge'.
+
+        Returns:
+            Dict with 'explanations' key.
+        """
+        result = _explain(
+            llm_response=state.get("recommendations", {}),
+            customer_summary=state.get("customer_summary", {}),
+            risks=state.get("risks", {}),
+            knowledge_docs=state.get("knowledge", {})
+        )
+        return {"explanations": result}
+
+
+def _explain(llm_response: dict = None, customer_summary: dict = None,
+             risks: dict = None, knowledge_docs: dict = None,
+             recommendations: dict = None) -> dict:
     """
     Validate, clean, and format explanations from the recommendation agent.
     This agent only validates and formats existing explanations; it does not
@@ -45,12 +83,12 @@ def explain(llm_response: dict = None, customer_summary: dict = None,
     # 1. Schema fallback: if the upstream response is missing or malformed,
     #    return the empty schema expected by the rest of the planner.
     if not isinstance(llm_response, dict) or "explanations" not in llm_response:
-        print("[Explanation Agent] Warning: Input response is missing or not a dict. Returning empty explanations.")
+        print("[ExplanationAgent] Warning: Input response is missing or not a dict. Returning empty explanations.")
         return {"explanations": []}
 
     explanations_list = llm_response.get("explanations")
     if not isinstance(explanations_list, list):
-        print("[Explanation Agent] Warning: 'explanations' is not a list. Returning empty explanations.")
+        print("[ExplanationAgent] Warning: 'explanations' is not a list. Returning empty explanations.")
         return {"explanations": []}
 
     validated_explanations = []
@@ -169,13 +207,51 @@ def explain(llm_response: dict = None, customer_summary: dict = None,
                 # string rather than inventing or altering it.
                 cleaned_evidence.append(item_str)
 
-        # Keep the evidence list empty if nothing could be validated.
+        # 3.5 Resolve action text
+        action_text = "General recommendation action"
+        recs_list = llm_response.get("recommendations", [])
+        if isinstance(recs_list, list):
+            for rec in recs_list:
+                if isinstance(rec, dict) and rec.get("id") == rec_id:
+                    action_text = rec.get("action", "")
+                    break
+
+        # 3.6 Structure the evidence with sources
+        structured_evidence = []
+        for item in cleaned_evidence:
+            item_lower = item.lower()
+            if any(k in item_lower for k in ["transcript", "meeting", "conversation", "team exports", "dashboard"]):
+                source = "Meeting Transcript"
+            elif any(k in item_lower for k in ["guide", "playbook", "sop", "faq", "training", "integration", "onboarding"]):
+                source = "Knowledge Base"
+            elif any(k in item_lower for k in ["ticket", "support"]):
+                source = "Support Tickets"
+            else:
+                source = "CRM"
+            
+            structured_evidence.append({
+                "source": source,
+                "data": item
+            })
+
         validated_explanations.append({
             "recommendation_id": rec_id,
-            "reason": reason,
-            "evidence": cleaned_evidence,
+            "action": action_text,
+            "reasoning": reason,
+            "reason": reason,  # Backward compatibility fallback
+            "evidence": structured_evidence,
+            "raw_evidence": cleaned_evidence,  # Backward compatibility fallback
             "confidence": confidence
         })
 
     return {"explanations": validated_explanations}
 
+
+# ── Module-level backward-compatible function ─────────────────────────────────
+
+def explain(llm_response: dict = None, customer_summary: dict = None,
+            risks: dict = None, knowledge_docs: dict = None,
+            recommendations: dict = None) -> dict:
+    """Backward-compatible wrapper."""
+    return _explain(llm_response, customer_summary, risks,
+                    knowledge_docs, recommendations)

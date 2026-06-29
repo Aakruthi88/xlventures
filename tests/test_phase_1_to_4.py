@@ -204,16 +204,17 @@ process = None
 try:
     # Start live server
     print("Starting uvicorn server in subprocess...")
+    log_file = open(os.path.join(workspace_root, "uvicorn.log"), "w", encoding="utf-8")
     process = subprocess.Popen(
         ["uvicorn", "main:app", "--host", "127.0.0.1", "--port", "8000"],
         cwd=backend_dir,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stdout=log_file,
+        stderr=log_file,
         text=True
     )
     
-    # Let server start
-    time.sleep(3)
+    # Let server start (allow extra time for ChromaDB, SQLite seeding, model loading)
+    time.sleep(10)
     
     base_url = "http://127.0.0.1:8000"
     

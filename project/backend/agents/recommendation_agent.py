@@ -4,14 +4,18 @@ Recommendation Agent (Decision Agent)
 Generates next-best-action recommendations by synthesizing
 insights from all other agents using LLM reasoning.
 
-Phase 3: Returns hardcoded mock data.
-Phase 11: Uses Groq LLM for real recommendation generation.
+Refactored: Uses crm_tool and customer_history_tool.
+No direct database access.
 """
 
 from dotenv import load_dotenv
 import os
 import json
-from groq import Groq
+from typing import Any, Dict, List
+
+from agents.base_agent import BaseAgent
+from tools.crm_tool import get_crm_details
+from tools.customer_history_tool import get_customer_history
 
 # Load environment variables (Task 1)
 # Try loading from the current working directory first
@@ -26,30 +30,6 @@ if os.path.exists(explicit_dotenv_path):
 # Initialize Groq API configurations
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 MODEL_NAME = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-
-
-# ============================================================
-# JSON CONTRACT (Task 5)
-# ============================================================
-# The expected return format that this agent returns:
-# {
-#     "recommendations":[
-#         {
-#             "id":"",
-#             "action":"",
-#             "priority":"",
-#             "confidence":0.95
-#         }
-#     ],
-#     "explanations":[
-#         {
-#             "recommendation_id":"",
-#             "reason":"",
-#             "evidence":[...],
-#             "confidence":0.95
-#         }
-#     ]
-# }
 
 
 # ============================================================
@@ -137,7 +117,7 @@ def get_fallback_recommendations() -> dict:
     }
 
 
-def generate(customer_summary: dict, risks: dict, opportunities: dict,
+def _generate(customer_summary: dict, risks: dict, opportunities: dict,
               sentiment: dict, knowledge_docs: dict,
               past_approvals: list = None) -> dict:
     """
@@ -156,10 +136,12 @@ def generate(customer_summary: dict, risks: dict, opportunities: dict,
     """
     # Verify that the Groq API key is present
     if not GROQ_API_KEY:
-        print("[Recommendation Agent] Warning: GROQ_API_KEY environment variable is not set. Using fallback.")
+        print("[RecommendationAgent] Warning: GROQ_API_KEY environment variable is not set. Using fallback.")
         return get_fallback_recommendations()
 
     try:
+        from groq import Groq
+
         # Initialize Groq client
         client = Groq(api_key=GROQ_API_KEY)
 
@@ -221,7 +203,7 @@ def generate(customer_summary: dict, risks: dict, opportunities: dict,
             "}"
         )
 
-        print(f"[Recommendation Agent] Calling Groq API with model: {MODEL_NAME}")
+        print(f"[RecommendationAgent] Calling Groq API with model: {MODEL_NAME}")
 
         # Execute exactly one LLM call
         response = client.chat.completions.create(
@@ -270,6 +252,56 @@ def generate(customer_summary: dict, risks: dict, opportunities: dict,
 
     except Exception as e:
         # Gracefully log/print error and return fallback recommendations matching the expected schema
-        print(f"[Recommendation Agent] Exception occurred during generation or parsing: {e}")
-        print("[Recommendation Agent] Returning fallback recommendations and explanations...")
+        print(f"[RecommendationAgent] Exception occurred during generation or parsing: {e}")
+        print("[RecommendationAgent] Returning fallback recommendations and explanations...")
         return get_fallback_recommendations()
+
+
+class RecommendationAgent(BaseAgent):
+    """
+    Generates next-best-action recommendations by synthesizing
+    insights from all other agents using LLM reasoning.
+    """
+
+    def __init__(self):
+        super().__init__(
+            name="recommendation_agent",
+            description="Generates next-best-action recommendations by synthesizing all agent insights.",
+            tools=[get_crm_details, get_customer_history]
+        )
+
+    def execute(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute recommendation generation.
+
+        Args:
+            state: Should contain outputs from analysis agents and 'customer_id'.
+
+        Returns:
+            Dict with 'recommendations' key.
+        """
+        # Import memory_agent here to avoid circular imports at module load
+        from agents import memory_agent
+
+        customer_id = state.get("customer_id", "C001")
+        past_approvals = memory_agent.get_similar_past_approvals(customer_id)
+
+        result = _generate(
+            customer_summary=state.get("customer_summary", {}),
+            risks=state.get("risks", {}),
+            opportunities=state.get("opportunities", {}),
+            sentiment=state.get("sentiment", {}),
+            knowledge_docs=state.get("knowledge", {}),
+            past_approvals=past_approvals
+        )
+        return {"recommendations": result}
+
+
+# ── Module-level backward-compatible function ─────────────────────────────────
+
+def generate(customer_summary: dict, risks: dict, opportunities: dict,
+             sentiment: dict, knowledge_docs: dict,
+             past_approvals: list = None) -> dict:
+    """Backward-compatible wrapper."""
+    return _generate(customer_summary, risks, opportunities,
+                     sentiment, knowledge_docs, past_approvals)

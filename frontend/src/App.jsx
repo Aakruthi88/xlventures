@@ -1,5 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import ReactFlow, {
+  Background,
+  Controls,
+  Handle,
+  Position,
+  useEdgesState,
+  useNodesState,
+} from 'reactflow';
+import 'reactflow/dist/style.css';
+
+/* ─────────────── constants ─────────────── */
 
 const CUSTOMERS = [
   { id: 'C001', name: 'ABC Manufacturing' },
@@ -14,606 +25,748 @@ const CUSTOMERS = [
   { id: 'C010', name: 'BrightPath Education' },
 ];
 
-const AGENT_STEPS = [
-  'Planner Agent',
-  'Customer Agent',
-  'Knowledge Agent',
-  'Sentiment Agent',
-  'Risk Agent',
-  'Opportunity Agent',
-  'Recommendation Agent',
-  'Explainability Agent',
-  'Memory Agent',
+const LOADING_STEPS = [
+  'Uploading Transcript…',
+  'Planner Agent Running…',
+  'Analyzing Customer…',
+  'Detecting Risks…',
+  'Finding Opportunities…',
+  'Searching Knowledge Base…',
+  'Generating Recommendations…',
+  'Preparing Explanations…',
+  'Loading Dashboard…',
 ];
 
-const LOADING_STEPS = [
-  'Uploading Transcript...',
-  'Planner Agent Running...',
-  'Analyzing Customer...',
-  'Detecting Risks...',
-  'Finding Opportunities...',
-  'Searching Knowledge Base...',
-  'Generating Recommendations...',
-  'Preparing Explanations...',
-  'Loading Dashboard...',
-];
+/* Maps agent name → { color, icon } for React Flow nodes */
+const AGENT_META = {
+  'Planner Agent':        { bg: '#6366f1', icon: '🧠' },
+  'Customer Agent':       { bg: '#0ea5e9', icon: '👤' },
+  'Knowledge Agent':      { bg: '#8b5cf6', icon: '📚' },
+  'Sentiment Agent':      { bg: '#f59e0b', icon: '💬' },
+  'Risk Agent':           { bg: '#ef4444', icon: '⚠' },
+  'Opportunity Agent':    { bg: '#10b981', icon: '💡' },
+  'Recommendation Agent': { bg: '#3b82f6', icon: '🎯' },
+  'Action Executor':      { bg: '#f97316', icon: '⚡' },
+};
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').trim();
 
 function buildApiUrl(path) {
-  const normalizedBase = apiBaseUrl.replace(/\/$/, '');
-  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  return `${normalizedBase}${normalizedPath}`;
+  const base = apiBaseUrl.replace(/\/$/, '');
+  return `${base}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
-function getHealthTone(healthScore) {
-  const numeric = Number(healthScore || 0);
-  if (numeric > 70) return { label: 'Healthy', classes: 'bg-emerald-100 text-emerald-700' };
-  if (numeric >= 40) return { label: 'Watch', classes: 'bg-amber-100 text-amber-700' };
-  return { label: 'At Risk', classes: 'bg-rose-100 text-rose-700' };
+/* ─────────────── helpers ─────────────── */
+
+function getHealthTone(score) {
+  const n = Number(score || 0);
+  if (n > 70) return { label: 'Healthy',  cls: 'bg-emerald-100 text-emerald-700',  bar: 'bg-emerald-500' };
+  if (n >= 40) return { label: 'Watch',   cls: 'bg-amber-100 text-amber-700',    bar: 'bg-amber-500' };
+  return              { label: 'At Risk', cls: 'bg-rose-100 text-rose-700',      bar: 'bg-rose-500' };
 }
 
-function getRiskTone(severity) {
-  const value = String(severity || '').toLowerCase();
-  if (value.includes('high')) return { label: 'High', classes: 'bg-rose-100 text-rose-700', icon: '⚠', ring: 'border-rose-200 bg-rose-50' };
-  if (value.includes('medium')) return { label: 'Medium', classes: 'bg-amber-100 text-amber-700', icon: '📉', ring: 'border-amber-200 bg-amber-50' };
-  return { label: 'Low', classes: 'bg-emerald-100 text-emerald-700', icon: '🛠', ring: 'border-emerald-200 bg-emerald-50' };
+function getRiskTone(sev) {
+  const v = String(sev || '').toLowerCase();
+  if (v.includes('high'))   return { label: 'High',   cls: 'bg-rose-100 text-rose-700',   ring: 'border-rose-200 bg-rose-50',    icon: '⚠' };
+  if (v.includes('medium')) return { label: 'Medium', cls: 'bg-amber-100 text-amber-700', ring: 'border-amber-200 bg-amber-50',  icon: '📉' };
+  return                           { label: 'Low',    cls: 'bg-emerald-100 text-emerald-700', ring: 'border-emerald-200 bg-emerald-50', icon: '🛠' };
 }
 
-function getPriorityTone(priority) {
-  const value = String(priority || '').toLowerCase();
-  if (value.includes('high')) return 'bg-rose-100 text-rose-700';
-  if (value.includes('medium')) return 'bg-amber-100 text-amber-700';
+function getPriorityTone(p) {
+  const v = String(p || '').toLowerCase();
+  if (v.includes('high'))   return 'bg-rose-100 text-rose-700';
+  if (v.includes('medium')) return 'bg-amber-100 text-amber-700';
   return 'bg-emerald-100 text-emerald-700';
 }
 
-function classifyEvidence(evidenceText) {
-  const normalized = String(evidenceText || '').toLowerCase();
-  if (/(transcript|meeting|conversation|team exports|dashboard)/.test(normalized)) return 'Meeting Transcript';
-  if (/(guide|playbook|sop|faq|training|integration|onboarding)/.test(normalized)) return 'Knowledge Base';
-  if (/(ticket|support)/.test(normalized)) return 'Support Tickets';
-  return 'CRM';
-}
-
-function buildEvidenceGroups(evidenceItems) {
-  const groups = [
-    { label: 'Meeting Transcript', items: [] },
-    { label: 'CRM', items: [] },
-    { label: 'Knowledge Base', items: [] },
-    { label: 'Support Tickets', items: [] },
-  ];
-
-  (evidenceItems || []).forEach((item) => {
-    const label = classifyEvidence(item);
-    const group = groups.find((entry) => entry.label === label);
-    if (group) {
-      group.items.push(item);
-    }
-  });
-
-  return groups.filter((group) => group.items.length > 0);
-}
-
-function formatTimestamp(value) {
-  if (!value) return '—';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return String(value);
-  return parsed.toLocaleString([], {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+function formatTimestamp(v) {
+  if (!v) return '—';
+  const d = new Date(v);
+  return isNaN(d) ? String(v) : d.toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
 function Spinner({ className = 'h-4 w-4' }) {
   return (
-    <svg className={`animate-spin ${className}`} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <svg className={`animate-spin ${className}`} viewBox="0 0 24 24" fill="none" aria-hidden>
       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4Zm0 0a8 8 0 0 0 8 8v4c-6.627 0-12-5.373-12-12h4Z" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4Z" />
     </svg>
   );
 }
 
-export default function App() {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const [customerId, setCustomerId] = useState('C001');
-  const [transcript, setTranscript] = useState('ABC Manufacturing has low analytics adoption, renewal in 20 days, and SAP integration is slow.');
-  const [isLoading, setIsLoading] = useState(false);
-  const [loadingStepIndex, setLoadingStepIndex] = useState(0);
-  const [loadingProgress, setLoadingProgress] = useState(10);
-  const [error, setError] = useState('');
-  const [sessionId, setSessionId] = useState('');
-  const [summary, setSummary] = useState(null);
-  const [recommendations, setRecommendations] = useState([]);
-  const [risks, setRisks] = useState([]);
-  const [explanations, setExplanations] = useState([]);
-  const [historyItems, setHistoryItems] = useState([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyError, setHistoryError] = useState('');
-  const [toast, setToast] = useState(null);
-  const [approvingId, setApprovingId] = useState('');
+/* ─────────────── React Flow custom node ─────────────── */
 
-  const selectedCustomer = useMemo(() => CUSTOMERS.find((customer) => customer.id === customerId), [customerId]);
-  const sortedHistoryItems = useMemo(() => {
-    return [...historyItems].sort((first, second) => {
-      const firstTime = Date.parse(first.approved_at || 0);
-      const secondTime = Date.parse(second.approved_at || 0);
-      return (Number.isNaN(secondTime) ? 0 : secondTime) - (Number.isNaN(firstTime) ? 0 : firstTime);
+function AgentNode({ data }) {
+  const statusStyles = {
+    completed: 'border-emerald-400 bg-emerald-50 shadow-emerald-200',
+    running:   'border-sky-400   bg-sky-50   shadow-sky-200   animate-pulse',
+    skipped:   'border-slate-300 bg-slate-50 shadow-slate-100 opacity-60',
+    pending:   'border-slate-300 bg-white    shadow-slate-100',
+    hitl:      'border-amber-400 bg-amber-50 shadow-amber-200',
+  };
+  const badgeStyles = {
+    completed: 'bg-emerald-100 text-emerald-700',
+    running:   'bg-sky-100   text-sky-700',
+    skipped:   'bg-slate-100 text-slate-500',
+    pending:   'bg-slate-100 text-slate-500',
+    hitl:      'bg-amber-100 text-amber-700',
+  };
+  const status = data.status || 'pending';
+
+  return (
+    <div className={`rounded-2xl border-2 shadow-md px-4 py-3 min-w-[160px] transition-all duration-300 ${statusStyles[status]}`}>
+      <Handle type="target" position={Position.Left} style={{ background: '#94a3b8' }} />
+      <div className="flex items-center gap-2">
+        <span className="text-xl">{data.icon}</span>
+        <div>
+          <p className="text-xs font-bold text-slate-700">{data.label}</p>
+          <span className={`inline-block mt-1 rounded-full px-2 py-0.5 text-xs font-semibold ${badgeStyles[status]}`}>
+            {status === 'completed' ? '✓ Done' : status === 'running' ? '⟳ Running' : status === 'hitl' ? '⏸ HITL' : status === 'skipped' ? 'Skipped' : 'Pending'}
+          </span>
+        </div>
+      </div>
+      <Handle type="source" position={Position.Right} style={{ background: '#94a3b8' }} />
+    </div>
+  );
+}
+
+const nodeTypes = { agentNode: AgentNode };
+
+/* ─────────────── Graph layout ─────────────── */
+
+function buildFlowNodes(trace, agentsDone) {
+  const rows = [
+    [{ id: 'planner_node', label: 'Planner Agent', icon: '🧠', x: 0 }],
+    [
+      { id: 'customer_agent',   label: 'Customer Agent',    icon: '👤', x: 0 },
+      { id: 'knowledge_agent',  label: 'Knowledge Agent',   icon: '📚', x: 1 },
+      { id: 'sentiment_agent',  label: 'Sentiment Agent',   icon: '💬', x: 2 },
+    ],
+    [
+      { id: 'risk_agent',        label: 'Risk Agent',        icon: '⚠', x: 0 },
+      { id: 'opportunity_agent', label: 'Opportunity Agent', icon: '💡', x: 1 },
+    ],
+    [{ id: 'recommendation_agent', label: 'Recommendation Agent', icon: '🎯', x: 0 }],
+    [{ id: 'action_execution_node', label: 'Action Executor', icon: '⚡', x: 0 }],
+  ];
+
+  const doneIds = new Set((trace || []).filter(t => t.status === 'completed').map(t => t.agent_name));
+  const runningIds = new Set((trace || []).filter(t => t.status === 'running').map(t => t.agent_name));
+
+  const nodeList = [];
+  rows.forEach((row, rowIdx) => {
+    const colW = 220;
+    const totalW = row.length * colW;
+    row.forEach((n, colIdx) => {
+      const status = doneIds.has(n.id) ? 'completed'
+        : runningIds.has(n.id) ? 'running'
+        : n.id === 'action_execution_node' && agentsDone ? 'hitl'
+        : 'pending';
+      nodeList.push({
+        id: n.id,
+        type: 'agentNode',
+        data: { label: n.label, icon: n.icon, status },
+        position: { x: colIdx * colW - totalW / 2 + colW / 2 + 400, y: rowIdx * 110 + 40 },
+      });
     });
-  }, [historyItems]);
+  });
+  return nodeList;
+}
 
-  async function loadHistory(customer) {
+function buildFlowEdges() {
+  return [
+    { id: 'e1', source: 'planner_node', target: 'customer_agent',      animated: true },
+    { id: 'e2', source: 'planner_node', target: 'knowledge_agent',      animated: true },
+    { id: 'e3', source: 'planner_node', target: 'sentiment_agent',      animated: true },
+    { id: 'e4', source: 'customer_agent',   target: 'risk_agent',        animated: true },
+    { id: 'e5', source: 'knowledge_agent',  target: 'risk_agent',        animated: true },
+    { id: 'e6', source: 'sentiment_agent',  target: 'opportunity_agent', animated: true },
+    { id: 'e7', source: 'risk_agent',        target: 'recommendation_agent', animated: true },
+    { id: 'e8', source: 'opportunity_agent', target: 'recommendation_agent', animated: true },
+    { id: 'e9', source: 'recommendation_agent', target: 'action_execution_node',
+      animated: true, label: '⏸ HITL Interrupt',
+      style: { stroke: '#f59e0b', strokeWidth: 2 },
+      labelStyle: { fill: '#92400e', fontWeight: 600, fontSize: 11 } },
+  ];
+}
+
+/* ─────────────── main app ─────────────── */
+
+export default function App() {
+  const navigate  = useNavigate();
+  const location  = useLocation();
+
+  /* form / session */
+  const [customerId,   setCustomerId]   = useState('C001');
+  const [transcript,   setTranscript]   = useState('ABC Manufacturing has low analytics adoption, renewal in 20 days, and SAP integration is slow. Team exports to Excel instead of dashboards. VP is considering BambooHR and Workday.');
+  const [isLoading,    setIsLoading]    = useState(false);
+  const [loadingIdx,   setLoadingIdx]   = useState(0);
+  const [loadingPct,   setLoadingPct]   = useState(10);
+  const [error,        setError]        = useState('');
+  const [sessionId,    setSessionId]    = useState('');
+
+  /* dashboard data */
+  const [summary,         setSummary]         = useState(null);
+  const [recommendations, setRecommendations] = useState([]);
+  const [risks,           setRisks]           = useState([]);
+  const [explanations,    setExplanations]    = useState([]);
+  const [historyItems,    setHistoryItems]    = useState([]);
+  const [historyLoading,  setHistoryLoading]  = useState(false);
+  const [historyError,    setHistoryError]    = useState('');
+
+  /* actions */
+  const [toast,           setToast]           = useState(null);
+  const [approvingId,     setApprovingId]     = useState('');
+  const [executingId,     setExecutingId]     = useState('');
+  const [executionResult, setExecutionResult] = useState({});
+
+  /* React Flow */
+  const [trace,           setTrace]           = useState([]);
+  const [rfNodes,         setRfNodes, onNodesChange] = useNodesState([]);
+  const [rfEdges,         setRfEdges, onEdgesChange] = useEdgesState(buildFlowEdges());
+
+  const selectedCustomer = useMemo(() => CUSTOMERS.find(c => c.id === customerId), [customerId]);
+  const isDashboard = location.pathname === '/dashboard';
+  const healthScore = Number(summary?.healthScore || 0);
+  const healthTone  = summary ? getHealthTone(healthScore) : null;
+  const agentsDone  = recommendations.length > 0;
+
+  /* Sync React Flow nodes whenever trace changes */
+  useEffect(() => {
+    setRfNodes(buildFlowNodes(trace, agentsDone));
+  }, [trace, agentsDone]);
+
+  /* Fetch trace for current session */
+  const refreshTrace = useCallback(async (sid) => {
+    if (!sid) return;
+    try {
+      const r = await fetch(buildApiUrl(`/agent_trace/${sid}`));
+      if (r.ok) {
+        const d = await r.json();
+        setTrace(d.trace || []);
+      }
+    } catch { /* silent */ }
+  }, []);
+
+  /* History */
+  async function loadHistory(cid) {
     setHistoryLoading(true);
     setHistoryError('');
     try {
-      const response = await fetch(buildApiUrl(`/history/${customer}`));
-      if (!response.ok) {
-        throw new Error('Unable to load approval history.');
-      }
-      const data = await response.json();
-      setHistoryItems(Array.isArray(data) ? data : []);
-    } catch (error) {
-      setHistoryError(error.message || 'Unable to load approval history.');
-      console.error('Unable to fetch history', error);
+      const r = await fetch(buildApiUrl(`/history/${cid}`));
+      if (!r.ok) throw new Error('Unable to load approval history.');
+      const d = await r.json();
+      setHistoryItems(Array.isArray(d) ? d : []);
+    } catch (e) {
+      setHistoryError(e.message || 'Unable to load approval history.');
     } finally {
       setHistoryLoading(false);
     }
   }
 
-  async function handleApprove(recommendationId) {
-    if (!sessionId || !recommendationId) {
-      setToast({ type: 'error', message: 'Select a recommendation before approving.' });
-      return;
-    }
-
-    setApprovingId(recommendationId);
+  /* Approve (legacy /approve — stores to memory/DB) */
+  async function handleApprove(recId) {
+    if (!sessionId || !recId) return;
+    setApprovingId(recId);
     setToast(null);
-
     try {
-      const response = await fetch(buildApiUrl('/approve'), {
+      const r = await fetch(buildApiUrl('/approve'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId, recommendation_id: recommendationId }),
+        body: JSON.stringify({ session_id: sessionId, recommendation_id: recId }),
       });
-
-      if (!response.ok) {
-        throw new Error('Unable to approve recommendation.');
-      }
-
+      if (!r.ok) throw new Error('Unable to approve recommendation.');
       await loadHistory(customerId);
-      setToast({ type: 'success', message: 'Recommendation approved successfully.' });
-    } catch (err) {
-      setToast({ type: 'error', message: err.message || 'Unable to approve recommendation.' });
+      setToast({ type: 'success', message: 'Recommendation approved — ready to execute.' });
+    } catch (e) {
+      setToast({ type: 'error', message: e.message || 'Unable to approve.' });
     } finally {
       setApprovingId('');
     }
   }
 
-  async function handleUpload(event) {
-    event.preventDefault();
+  /* Execute (/approve_action — resumes LangGraph HITL) */
+  async function handleExecute(recId) {
+    if (!sessionId || !recId) return;
+    setExecutingId(recId);
+    setToast(null);
+    try {
+      const r = await fetch(buildApiUrl('/approve_action'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId, recommendation_id: recId, approved: true }),
+      });
+      if (!r.ok) throw new Error('Unable to execute action.');
+      const d = await r.json();
+      const result = d.execution_result || {};
+      setExecutionResult(prev => ({ ...prev, [recId]: result }));
+      await refreshTrace(sessionId);
+      setToast({ type: 'success', message: result.action || 'Action executed successfully!' });
+      await loadHistory(customerId);
+    } catch (e) {
+      setToast({ type: 'error', message: e.message || 'Unable to execute action.' });
+    } finally {
+      setExecutingId('');
+    }
+  }
+
+  /* Upload transcript */
+  async function handleUpload(e) {
+    e.preventDefault();
     setIsLoading(true);
     setError('');
     setSummary(null);
     setRecommendations([]);
     setRisks([]);
     setExplanations([]);
-    setLoadingStepIndex(0);
-    setLoadingProgress(10);
+    setTrace([]);
+    setExecutionResult({});
+    setLoadingIdx(0);
+    setLoadingPct(10);
 
     try {
-      setLoadingStepIndex(0);
-      setLoadingProgress(12);
-      await new Promise((resolve) => window.setTimeout(resolve, 250));
-      const response = await fetch(buildApiUrl('/upload_transcript'), {
+      setLoadingIdx(0); setLoadingPct(12);
+      await delay(200);
+      const uploadRes = await fetch(buildApiUrl('/upload_transcript'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ customer_id: customerId, transcript_text: transcript }),
       });
+      if (!uploadRes.ok) throw new Error('Upload failed.');
 
-      if (!response.ok) {
-        throw new Error('Unable to upload transcript.');
-      }
+      setLoadingIdx(1); setLoadingPct(24);
+      await delay(200);
+      const { session_id } = await uploadRes.json();
+      setSessionId(session_id);
 
-      setLoadingStepIndex(1);
-      setLoadingProgress(24);
-      await new Promise((resolve) => window.setTimeout(resolve, 220));
-      const data = await response.json();
-      setSessionId(data.session_id);
+      setLoadingIdx(2); setLoadingPct(38);
+      await delay(200);
+      const recRes = await fetch(buildApiUrl(`/recommendation/${session_id}`));
+      if (!recRes.ok) throw new Error('Failed to fetch recommendations.');
 
-      setLoadingStepIndex(2);
-      setLoadingProgress(36);
-      await new Promise((resolve) => window.setTimeout(resolve, 220));
-      const recResponse = await fetch(buildApiUrl(`/recommendation/${data.session_id}`));
-      if (!recResponse.ok) {
-        throw new Error('Unable to fetch recommendation summary.');
-      }
+      setLoadingIdx(5); setLoadingPct(70);
+      await delay(200);
+      const rec = await recRes.json();
 
-      setLoadingStepIndex(4);
-      setLoadingProgress(58);
-      await new Promise((resolve) => window.setTimeout(resolve, 220));
-      const recData = await recResponse.json();
-      const customerSummary = recData.customer_summary || {};
-      const summaryData = {
-        company: customerSummary.company || selectedCustomer?.name || customerId,
-        healthScore: customerSummary.health_score || 0,
-        renewalCountdown: customerSummary.days_to_renewal || 0,
-        supportTickets: customerSummary.open_support_tickets || 0,
-      };
-      setSummary(summaryData);
-      setRecommendations(recData.recommendations?.recommendations || []);
-      setRisks(recData.risks?.risks || []);
-      setExplanations(recData.explanations?.explanations || []);
-      setLoadingStepIndex(7);
-      setLoadingProgress(88);
-      await new Promise((resolve) => window.setTimeout(resolve, 220));
-      setToast({ type: 'success', message: 'Transcript uploaded successfully.' });
+      const cs = rec.customer_summary || {};
+      setSummary({
+        company:         cs.company || selectedCustomer?.name || customerId,
+        healthScore:     cs.health_score || 0,
+        renewalCountdown: cs.days_to_renewal || 0,
+        supportTickets:  cs.open_support_tickets || 0,
+        plan:            cs.plan || '—',
+        activeUsers:     cs.active_users || 0,
+        licensedUsers:   cs.licensed_users || 0,
+        dashboardUsage:  cs.dashboard_usage_pct || 0,
+        owner:           cs.owner || '—',
+      });
+      setRecommendations(rec.recommendations?.recommendations || []);
+      setRisks(rec.risks?.risks || []);
+      setExplanations(rec.explanations?.explanations || []);
+
+      setLoadingIdx(7); setLoadingPct(88);
+      await delay(200);
       await loadHistory(customerId);
-      setLoadingStepIndex(8);
-      setLoadingProgress(100);
-      await new Promise((resolve) => window.setTimeout(resolve, 220));
+      await refreshTrace(session_id);
+
+      setLoadingIdx(8); setLoadingPct(100);
+      await delay(200);
+      setToast({ type: 'success', message: 'Analysis complete — review your recommendations.' });
       navigate('/dashboard');
     } catch (err) {
-      const message = err.message || 'Unexpected error.';
-      setError(message);
-      setToast({ type: 'error', message });
+      setError(err.message || 'Unexpected error.');
+      setToast({ type: 'error', message: err.message || 'Unexpected error.' });
     } finally {
       setIsLoading(false);
     }
   }
 
   useEffect(() => {
-    if (location.pathname === '/dashboard' && customerId) {
-      loadHistory(customerId);
-    }
+    if (isDashboard && customerId) loadHistory(customerId);
   }, [location.pathname, customerId]);
 
   useEffect(() => {
-    if (!toast) return undefined;
-    const timer = window.setTimeout(() => setToast(null), 3200);
-    return () => window.clearTimeout(timer);
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
   }, [toast]);
 
-  const isDashboard = location.pathname === '/dashboard';
-  const healthScore = Number(summary?.healthScore || 0);
-  const healthPercent = Math.max(0, Math.min(100, healthScore));
-  const healthTone = summary ? getHealthTone(healthScore) : null;
-  const highRiskCount = risks.filter((item) => String(item.severity || item.level || item.priority || '').toLowerCase().includes('high')).length;
-  const mediumRiskCount = risks.filter((item) => String(item.severity || item.level || item.priority || '').toLowerCase().includes('medium')).length;
+  /* sorted history */
+  const sortedHistory = useMemo(() =>
+    [...historyItems].sort((a, b) => Date.parse(b.approved_at || 0) - Date.parse(a.approved_at || 0)),
+    [historyItems]);
+
+  const highRiskCount   = risks.filter(r => String(r.severity || '').toLowerCase().includes('high')).length;
+  const mediumRiskCount = risks.filter(r => String(r.severity || '').toLowerCase().includes('medium')).length;
+
   const statCards = [
-    { label: 'Recommendations Generated', value: recommendations.length },
-    { label: 'High Risks', value: highRiskCount },
-    { label: 'Medium Risks', value: mediumRiskCount },
-    { label: 'Previous Approvals', value: historyItems.length },
+    { label: 'Recommendations', value: recommendations.length, color: 'text-sky-600' },
+    { label: 'High Risks',       value: highRiskCount,          color: 'text-rose-600' },
+    { label: 'Medium Risks',     value: mediumRiskCount,        color: 'text-amber-600' },
+    { label: 'Prior Approvals',  value: historyItems.length,    color: 'text-emerald-600' },
   ];
 
+  /* ─── render ─── */
   return (
-    <div className="min-h-screen bg-slate-50 px-3 py-6 text-slate-800 sm:px-4 lg:px-6">
-      <div className="mx-auto flex max-w-7xl flex-col gap-6">
-        <header className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200/70">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.25em] text-sky-600">XL Ventures</p>
-              <h1 className="mt-1 text-3xl font-semibold tracking-tight">Customer Success Copilot</h1>
-              <p className="mt-2 max-w-2xl text-sm text-slate-600">Upload a customer transcript and review the generated customer summary, risk cues, and recommendations.</p>
+    <div style={{ fontFamily: "'Inter', sans-serif" }} className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-slate-100">
+      {/* Loading Overlay */}
+      {isLoading && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm px-4">
+          <div className="w-full max-w-xl rounded-3xl border border-slate-700 bg-slate-900 p-8 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-widest text-indigo-400">Agentic AI Pipeline</p>
+                <h2 className="mt-1 text-2xl font-bold text-white">Analyzing customer insights…</h2>
+              </div>
+              <div className="rounded-full bg-indigo-900/60 p-3 text-indigo-400"><Spinner className="h-6 w-6" /></div>
             </div>
-            <div className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600 shadow-sm">
-              {isDashboard ? 'Customer Summary Dashboard' : 'Upload Transcript'}
+            <div className="mt-6 h-2 rounded-full bg-slate-700 overflow-hidden">
+              <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-emerald-500 transition-all duration-500" style={{ width: `${loadingPct}%` }} />
             </div>
-          </div>
-        </header>
-
-        {isLoading ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4 backdrop-blur-sm">
-            <div className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-8 shadow-2xl">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">Working on your request</p>
-                  <h2 className="mt-1 text-2xl font-semibold">Analyzing customer insights</h2>
-                </div>
-                <div className="rounded-full bg-sky-50 p-3 text-sky-600">
-                  <Spinner className="h-6 w-6" />
-                </div>
-              </div>
-              <div className="mt-6 h-3 overflow-hidden rounded-full bg-slate-200">
-                <div className="h-full rounded-full bg-gradient-to-r from-sky-500 to-emerald-500 transition-all duration-500" style={{ width: `${loadingProgress}%` }} />
-              </div>
-              <div className="mt-3 flex items-center justify-between text-sm text-slate-500">
-                <span>{LOADING_STEPS[loadingStepIndex] || 'Preparing insights...'}</span>
-                <span>{loadingProgress}%</span>
-              </div>
-              <div className="mt-6 space-y-2">
-                {LOADING_STEPS.map((step, index) => {
-                  const isComplete = index < loadingStepIndex;
-                  const isActive = index === loadingStepIndex;
-                  return (
-                    <div key={step} className={`flex items-center gap-3 rounded-2xl border px-3 py-2 text-sm ${isComplete ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : isActive ? 'border-sky-200 bg-sky-50 text-sky-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
-                      <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${isComplete ? 'bg-emerald-600 text-white' : isActive ? 'bg-sky-600 text-white' : 'bg-slate-200 text-slate-600'}`}>
-                        {isComplete ? '✓' : index + 1}
-                      </span>
-                      {step}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        {!isDashboard ? (
-          <form onSubmit={handleUpload} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200/70">
-            <div className="grid gap-6 md:grid-cols-[1.1fr_0.9fr]">
-              <div className="space-y-4">
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">Customer</label>
-                  <select value={customerId} onChange={(event) => setCustomerId(event.target.value)} className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm focus:border-sky-500 focus:outline-none">
-                    {CUSTOMERS.map((customer) => (
-                      <option key={customer.id} value={customer.id}>{customer.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">Transcript</label>
-                  <textarea value={transcript} onChange={(event) => setTranscript(event.target.value)} rows={10} className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm shadow-sm focus:border-sky-500 focus:outline-none" placeholder="Paste the meeting transcript here" />
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
-                <h2 className="text-lg font-semibold">Ready to analyze</h2>
-                <p className="mt-2 text-sm text-slate-600">The workflow posts your transcript to the backend, then loads the generated recommendation summary for the selected customer.</p>
-                <button type="submit" disabled={isLoading} className="mt-6 inline-flex items-center justify-center rounded-2xl bg-sky-600 px-4 py-3 text-sm font-semibold text-white transition duration-200 hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-sky-300">
-                  {isLoading ? (
-                    <span className="flex items-center gap-2">
-                      <Spinner className="h-4 w-4" />
-                      Uploading…
+            <div className="mt-4 grid gap-2">
+              {LOADING_STEPS.map((step, i) => {
+                const done   = i < loadingIdx;
+                const active = i === loadingIdx;
+                return (
+                  <div key={step} className={`flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-all ${done ? 'bg-emerald-900/40 text-emerald-400' : active ? 'bg-indigo-900/50 text-indigo-300' : 'text-slate-500'}`}>
+                    <span className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold ${done ? 'bg-emerald-500 text-white' : active ? 'bg-indigo-500 text-white' : 'bg-slate-700 text-slate-400'}`}>
+                      {done ? '✓' : i + 1}
                     </span>
-                  ) : 'Submit'}
-                </button>
-                {error ? <p className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</p> : null}
-              </div>
-            </div>
-          </form>
-        ) : (
-          <div className="space-y-6">
-            {toast ? (
-              <div className={`rounded-2xl border px-4 py-3 text-sm shadow-sm transition duration-200 ${toast.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-rose-200 bg-rose-50 text-rose-700'}`}>
-                {toast.message}
-              </div>
-            ) : null}
-
-            <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200/70">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <p className="text-sm font-semibold uppercase tracking-[0.25em] text-sky-600">AI Workflow</p>
-                  <h2 className="text-xl font-semibold">Execution Timeline</h2>
-                </div>
-                <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-700">
-                  {recommendations.length > 0 ? 'Completed successfully' : 'Pending execution'}
-                </div>
-              </div>
-              <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {AGENT_STEPS.map((agent, index) => (
-                  <div key={agent} className={`rounded-2xl border px-4 py-3 text-sm transition duration-200 ${recommendations.length > 0 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
-                    <div className="flex items-center gap-2 font-semibold">
-                      <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs ${recommendations.length > 0 ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-600'}`}>
-                        {recommendations.length > 0 ? '✓' : index + 1}
-                      </span>
-                      {agent}
-                    </div>
+                    {step}
+                    {active && <Spinner className="ml-auto h-3 w-3 text-indigo-400" />}
                   </div>
-                ))}
-              </div>
-            </section>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
-            <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              {statCards.map((card) => (
-                <div key={card.label} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70 transition duration-200 hover:-translate-y-0.5 hover:shadow-md">
-                  <p className="text-sm text-slate-500">{card.label}</p>
-                  <p className="mt-2 text-3xl font-semibold text-slate-800">{card.value}</p>
+      {/* Header */}
+      <header className="border-b border-slate-800 bg-slate-950/60 backdrop-blur-md px-6 py-4 sticky top-0 z-40">
+        <div className="mx-auto max-w-7xl flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-lg font-bold shadow-lg shadow-indigo-500/30">⚡</div>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-indigo-400">XL Ventures</p>
+              <h1 className="text-base font-bold text-white leading-tight">Customer Success Copilot</h1>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {sessionId && (
+              <span className="rounded-full bg-emerald-900/50 border border-emerald-700/50 px-3 py-1 text-xs text-emerald-400 font-mono">
+                Session: {sessionId.slice(0, 8)}…
+              </span>
+            )}
+            <button onClick={() => navigate(isDashboard ? '/' : '/dashboard')}
+              className="rounded-xl border border-slate-700 bg-slate-800/80 px-4 py-2 text-sm font-medium text-slate-300 hover:border-indigo-500 hover:text-indigo-300 transition-all">
+              {isDashboard ? '← New Analysis' : 'Dashboard →'}
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-7xl px-4 py-8 space-y-8">
+        {/* Toast */}
+        {toast && (
+          <div className={`rounded-2xl border px-4 py-3 text-sm font-medium transition-all ${toast.type === 'success' ? 'border-emerald-700 bg-emerald-900/50 text-emerald-300' : 'border-rose-700 bg-rose-900/50 text-rose-300'}`}>
+            {toast.message}
+          </div>
+        )}
+
+        {/* Upload Form */}
+        {!isDashboard && (
+          <form onSubmit={handleUpload} className="grid gap-6 lg:grid-cols-[1.4fr_0.6fr]">
+            <div className="rounded-3xl border border-slate-800 bg-slate-900/60 backdrop-blur-sm p-6 space-y-5">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-4">New Analysis</p>
+                <label className="block text-sm font-semibold text-slate-300 mb-2">Customer Account</label>
+                <select value={customerId} onChange={e => setCustomerId(e.target.value)}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm text-white focus:border-indigo-500 focus:outline-none transition-colors">
+                  {CUSTOMERS.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-300 mb-2">Meeting Transcript</label>
+                <textarea value={transcript} onChange={e => setTranscript(e.target.value)} rows={10}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none resize-none transition-colors"
+                  placeholder="Paste meeting transcript, CRM notes, or email thread here…" />
+              </div>
+              {error && <p className="rounded-xl border border-rose-700 bg-rose-900/40 px-4 py-3 text-sm text-rose-300">{error}</p>}
+              <button type="submit" disabled={isLoading}
+                className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/20 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all">
+                {isLoading ? <><Spinner className="h-4 w-4" /> Analyzing…</> : '🚀 Run AI Analysis'}
+              </button>
+            </div>
+
+            <div className="rounded-3xl border border-slate-800 bg-slate-900/60 backdrop-blur-sm p-6 flex flex-col gap-4">
+              <p className="text-xs font-bold uppercase tracking-widest text-indigo-400">Agent Pipeline</p>
+              <p className="text-sm text-slate-400">The multi-agent system will analyze your transcript through a dynamic pipeline:</p>
+              {['🧠 Planner Agent', '👤 Customer Agent', '📚 Knowledge Agent', '💬 Sentiment Agent', '⚠ Risk Agent', '💡 Opportunity Agent', '🎯 Recommendation Agent', '⚡ Action Executor'].map(step => (
+                <div key={step} className="flex items-center gap-3 rounded-xl border border-slate-700 bg-slate-800/60 px-3 py-2 text-sm text-slate-300">
+                  {step}
                 </div>
               ))}
-            </section>
+            </div>
+          </form>
+        )}
 
-            <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200/70">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        {/* Dashboard */}
+        {isDashboard && (
+          <div className="space-y-8">
+            {/* React Flow Agent Graph */}
+            <section className="rounded-3xl border border-slate-800 bg-slate-900/60 backdrop-blur-sm overflow-hidden">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
                 <div>
-                  <p className="text-sm font-semibold uppercase tracking-[0.25em] text-sky-600">Customer Summary</p>
-                  <h2 className="text-2xl font-semibold">{summary?.company || selectedCustomer?.name || 'Customer profile'}</h2>
+                  <p className="text-xs font-bold uppercase tracking-widest text-indigo-400">Live Execution</p>
+                  <h2 className="text-lg font-bold text-white">Agent Execution Graph</h2>
                 </div>
-                {healthTone ? (
-                  <span className={`rounded-full px-3 py-1 text-sm font-semibold ${healthTone.classes}`}>{healthTone.label}</span>
-                ) : null}
-              </div>
-
-              <div className="mt-6 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-slate-500">Health Score</p>
-                      <p className="mt-1 text-3xl font-semibold">{summary?.healthScore ?? '—'} / 100</p>
-                    </div>
-                    <div className={`rounded-full px-3 py-1 text-sm font-semibold ${healthTone?.classes || 'bg-slate-100 text-slate-600'}`}>
-                      {healthTone?.label || 'Pending'}
-                    </div>
-                  </div>
-                  <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-200">
-                    <div className={`h-full rounded-full transition-all duration-700 ${healthScore > 70 ? 'bg-emerald-500' : healthScore >= 40 ? 'bg-amber-500' : 'bg-rose-500'}`} style={{ width: `${healthPercent}%` }} />
-                  </div>
-                  <div className="mt-2 text-sm text-slate-500">Customer health is at {healthPercent}% of target readiness.</div>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-                  <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                    <p className="text-sm text-slate-500">Renewal Countdown</p>
-                    <p className="mt-2 text-2xl font-semibold">{summary?.renewalCountdown ?? '—'} days</p>
-                  </div>
-                  <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                    <p className="text-sm text-slate-500">Support Tickets</p>
-                    <p className="mt-2 text-2xl font-semibold">{summary?.supportTickets ?? '—'}</p>
-                  </div>
+                <div className="flex items-center gap-3 text-xs font-semibold">
+                  <span className="flex items-center gap-1.5 text-emerald-400"><span className="h-2 w-2 rounded-full bg-emerald-400 inline-block"/> Completed</span>
+                  <span className="flex items-center gap-1.5 text-sky-400"><span className="h-2 w-2 rounded-full bg-sky-400 inline-block"/> Running</span>
+                  <span className="flex items-center gap-1.5 text-amber-400"><span className="h-2 w-2 rounded-full bg-amber-400 inline-block"/> HITL Interrupt</span>
+                  <span className="flex items-center gap-1.5 text-slate-500"><span className="h-2 w-2 rounded-full bg-slate-500 inline-block"/> Pending</span>
                 </div>
               </div>
-
-              <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                <p className="font-semibold text-slate-800">Session</p>
-                <p className="mt-1 break-all">{sessionId || 'No active session'}</p>
+              <div style={{ height: 480, background: '#0f172a' }}>
+                <ReactFlow
+                  nodes={rfNodes}
+                  edges={rfEdges}
+                  onNodesChange={onNodesChange}
+                  onEdgesChange={onEdgesChange}
+                  nodeTypes={nodeTypes}
+                  fitView
+                  proOptions={{ hideAttribution: true }}
+                >
+                  <Background color="#1e293b" gap={24} />
+                  <Controls style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }} />
+                </ReactFlow>
               </div>
             </section>
 
-            <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-              <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200/70 transition duration-200 hover:-translate-y-0.5 hover:shadow-md">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold">Risk Cards</h3>
-                  <span className="text-sm text-slate-500">{risks.length} items</span>
+            {/* Stat Cards */}
+            <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+              {statCards.map(c => (
+                <div key={c.label} className="rounded-2xl border border-slate-800 bg-slate-900/60 backdrop-blur-sm p-5 hover:-translate-y-1 hover:border-indigo-700 transition-all">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{c.label}</p>
+                  <p className={`mt-2 text-4xl font-bold ${c.color}`}>{c.value}</p>
                 </div>
-                <div className="mt-4 space-y-3">
-                  {risks.length > 0 ? risks.map((risk, index) => {
-                    const tone = getRiskTone(risk.severity || risk.level || risk.priority || 'Medium');
+              ))}
+            </div>
+
+            {/* Customer Health */}
+            {summary && (
+              <section className="rounded-3xl border border-slate-800 bg-slate-900/60 backdrop-blur-sm p-6">
+                <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-widest text-indigo-400">Customer Health</p>
+                    <h2 className="text-2xl font-bold text-white">{summary.company}</h2>
+                  </div>
+                  {healthTone && (
+                    <span className={`rounded-full px-4 py-1.5 text-sm font-bold ${healthTone.cls}`}>{healthTone.label}</span>
+                  )}
+                </div>
+                <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
+                  {[
+                    { label: 'Health Score',    value: `${summary.healthScore}/100` },
+                    { label: 'Renewal',          value: `${summary.renewalCountdown}d` },
+                    { label: 'Support Tickets',  value: summary.supportTickets },
+                    { label: 'Plan',             value: summary.plan },
+                    { label: 'Active Users',     value: `${summary.activeUsers}/${summary.licensedUsers}` },
+                    { label: 'Dashboard Usage',  value: `${summary.dashboardUsage}%` },
+                  ].map(m => (
+                    <div key={m.label} className="rounded-2xl border border-slate-700 bg-slate-800/50 p-4 text-center">
+                      <p className="text-xs text-slate-500 font-medium mb-1">{m.label}</p>
+                      <p className="text-xl font-bold text-white">{m.value}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-5">
+                  <div className="flex justify-between text-xs text-slate-500 mb-2">
+                    <span>Customer Health</span>
+                    <span>{summary.healthScore}%</span>
+                  </div>
+                  <div className="h-3 rounded-full bg-slate-800 overflow-hidden">
+                    <div className={`h-full rounded-full transition-all duration-700 ${healthTone?.bar || 'bg-slate-600'}`}
+                      style={{ width: `${Math.max(0, Math.min(100, summary.healthScore))}%` }} />
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {/* Risks + Recommendations */}
+            <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+              {/* Risk Cards */}
+              <section className="rounded-3xl border border-slate-800 bg-slate-900/60 backdrop-blur-sm p-6">
+                <div className="flex items-center justify-between mb-5">
+                  <h3 className="font-bold text-white">Risk Signals</h3>
+                  <span className="rounded-full border border-slate-700 bg-slate-800 px-2.5 py-0.5 text-xs text-slate-400">{risks.length}</span>
+                </div>
+                <div className="space-y-3">
+                  {risks.length > 0 ? risks.map((risk, i) => {
+                    const tone = getRiskTone(risk.severity);
                     return (
-                      <div key={`${risk.type || risk.name || index}`} className={`rounded-2xl border p-4 transition duration-200 hover:-translate-y-0.5 hover:shadow-sm ${tone.ring}`}>
+                      <div key={i} className={`rounded-2xl border p-4 ${tone.ring}`}>
                         <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-start gap-3">
-                            <div className="rounded-2xl bg-white/80 p-2 text-lg">{tone.icon}</div>
+                          <div className="flex items-start gap-2">
+                            <span className="text-xl mt-0.5">{tone.icon}</span>
                             <div>
-                              <p className="text-sm font-semibold text-slate-800">{risk.type || risk.name || 'Risk'}</p>
-                              <p className="mt-2 text-sm text-slate-600">{risk.evidence || risk.details || 'No evidence provided.'}</p>
+                              <p className="text-sm font-bold text-slate-800">{risk.type || 'Risk'}</p>
+                              <p className="mt-1 text-xs text-slate-600">{risk.evidence || '—'}</p>
                             </div>
                           </div>
-                          <span className={`rounded-full px-3 py-1 text-sm font-semibold ${tone.classes}`}>{tone.label}</span>
+                          <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-bold ${tone.cls}`}>{tone.label}</span>
                         </div>
                       </div>
                     );
                   }) : (
-                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-600">
-                      No risk signals available yet. Upload a transcript to begin.
+                    <div className="rounded-2xl border border-dashed border-slate-700 p-6 text-center text-sm text-slate-500">
+                      No risks detected yet.
                     </div>
                   )}
                 </div>
               </section>
 
-              <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200/70 transition duration-200 hover:-translate-y-0.5 hover:shadow-md">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold">Recommendations</h3>
-                  <span className="text-sm text-slate-500">{recommendations.length} items</span>
+              {/* Recommendations */}
+              <section className="rounded-3xl border border-slate-800 bg-slate-900/60 backdrop-blur-sm p-6">
+                <div className="flex items-center justify-between mb-5">
+                  <h3 className="font-bold text-white">Next Best Actions</h3>
+                  <span className="rounded-full border border-slate-700 bg-slate-800 px-2.5 py-0.5 text-xs text-slate-400">{recommendations.length}</span>
                 </div>
-                <div className="mt-4 space-y-4">
-                  {recommendations.length > 0 ? recommendations.map((item, index) => {
-                    const explanation = explanations[index] || {};
-                    const evidenceGroups = buildEvidenceGroups(explanation.evidence || []);
+                <div className="space-y-4">
+                  {recommendations.length > 0 ? recommendations.map((item, i) => {
+                    const expl = explanations[i] || {};
+                    const execRes = executionResult[item.id];
+                    const confidence = Math.round(Number(item.confidence || 0) * 100);
+                    // evidence now has {source, data} objects
+                    const evidenceItems = (expl.evidence || []);
                     return (
-                      <div key={`${item.id || index}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 transition duration-200 hover:-translate-y-0.5 hover:border-sky-200 hover:bg-white">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold text-slate-800">{item.action || 'Recommendation'}</p>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              <span className={`rounded-full px-3 py-1 text-sm font-semibold ${getPriorityTone(item.priority)}`}>{item.priority || 'Unknown'}</span>
-                              <span className="rounded-full bg-slate-200 px-3 py-1 text-sm text-slate-700">Confidence {Math.round(Number(item.confidence || 0) * 100)}%</span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <label className="flex items-center gap-2 text-sm text-slate-600">
-                              <input type="checkbox" className="h-4 w-4 rounded border-slate-300" />
-                              Select
-                            </label>
-                            <button type="button" onClick={() => handleApprove(item.id)} disabled={approvingId === item.id} className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition duration-200 hover:border-sky-400 hover:text-sky-700 disabled:cursor-not-allowed disabled:opacity-60">
-                              {approvingId === item.id ? <><Spinner className="h-4 w-4" /> Approving…</> : 'Approve'}
-                            </button>
+                      <div key={item.id || i} className="rounded-2xl border border-slate-700 bg-slate-800/50 p-4 hover:border-indigo-600 transition-all">
+                        {/* Action + badges */}
+                        <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+                          <p className="text-sm font-bold text-white flex-1">{item.action}</p>
+                          <div className="flex gap-2 flex-wrap">
+                            <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${getPriorityTone(item.priority)}`}>{item.priority}</span>
+                            <span className="rounded-full bg-slate-700 px-2.5 py-0.5 text-xs text-slate-300">
+                              {confidence}% confidence
+                            </span>
                           </div>
                         </div>
 
-                        <details className="group mt-4 rounded-2xl border border-slate-200 bg-white p-3">
-                          <summary className="cursor-pointer list-none text-sm font-semibold text-slate-700">View rationale & evidence</summary>
-                          <div className="mt-3 space-y-3 border-t border-slate-200 pt-3">
-                            <div>
-                              <p className="text-sm font-semibold text-slate-800">Reason</p>
-                              <p className="mt-1 text-sm text-slate-600">{explanation.reason || 'No rationale provided.'}</p>
-                            </div>
-                            <div>
-                              <p className="text-sm font-semibold text-slate-800">Confidence</p>
-                              <p className="mt-1 text-sm text-slate-600">{explanation.confidence ?? item.confidence ?? '—'}</p>
-                            </div>
-                            <div className="space-y-3">
-                              {evidenceGroups.length > 0 ? evidenceGroups.map((group) => (
-                                <div key={group.label} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                                  <p className="text-sm font-semibold text-slate-700">{group.label}</p>
-                                  <ul className="mt-2 space-y-1 pl-4 text-sm text-slate-600">
-                                    {group.items.map((entry, entryIndex) => (
-                                      <li key={`${group.label}-${entryIndex}`} className="list-disc">{entry}</li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              )) : (
-                                <p className="text-sm text-slate-600">No evidence available.</p>
-                              )}
-                            </div>
+                        {/* Confidence bar */}
+                        <div className="mb-3">
+                          <div className="h-1.5 rounded-full bg-slate-700 overflow-hidden">
+                            <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-emerald-500 transition-all duration-700"
+                              style={{ width: `${confidence}%` }} />
                           </div>
-                        </details>
+                        </div>
+
+                        {/* Reasoning */}
+                        {expl.reasoning && (
+                          <p className="text-xs text-slate-400 mb-3 italic">"{expl.reasoning}"</p>
+                        )}
+
+                        {/* Evidence pills */}
+                        {evidenceItems.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mb-3">
+                            {evidenceItems.map((ev, ei) => {
+                              const src = typeof ev === 'object' ? ev.source : 'CRM';
+                              const dat = typeof ev === 'object' ? ev.data : ev;
+                              const srcColors = {
+                                'Meeting Transcript': 'border-sky-700 bg-sky-900/40 text-sky-300',
+                                'Knowledge Base':     'border-purple-700 bg-purple-900/40 text-purple-300',
+                                'Support Tickets':    'border-rose-700 bg-rose-900/40 text-rose-300',
+                                'CRM':                'border-emerald-700 bg-emerald-900/40 text-emerald-300',
+                              };
+                              return (
+                                <span key={ei} title={dat}
+                                  className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${srcColors[src] || srcColors['CRM']}`}>
+                                  {src}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Execution result */}
+                        {execRes && (
+                          <div className={`mb-3 rounded-xl border px-3 py-2 text-xs font-medium ${execRes.status === 'success' ? 'border-emerald-700 bg-emerald-900/40 text-emerald-300' : 'border-rose-700 bg-rose-900/40 text-rose-300'}`}>
+                            ⚡ {execRes.action || 'Action executed'}
+                          </div>
+                        )}
+
+                        {/* Actions row */}
+                        <div className="flex items-center gap-2 pt-1">
+                          <button onClick={() => handleApprove(item.id)} disabled={!!approvingId}
+                            className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-slate-600 bg-slate-700/60 px-3 py-2 text-xs font-bold text-slate-300 hover:border-indigo-500 hover:text-indigo-300 disabled:opacity-50 transition-all">
+                            {approvingId === item.id ? <><Spinner className="h-3 w-3" /> Approving…</> : '✓ Approve'}
+                          </button>
+                          <button onClick={() => handleExecute(item.id)} disabled={!!executingId}
+                            className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-indigo-600 bg-indigo-700/60 px-3 py-2 text-xs font-bold text-indigo-200 hover:bg-indigo-600 hover:border-indigo-400 disabled:opacity-50 transition-all">
+                            {executingId === item.id ? <><Spinner className="h-3 w-3" /> Executing…</> : '⚡ Execute'}
+                          </button>
+                        </div>
                       </div>
                     );
                   }) : (
-                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-600">
-                      No recommendations available. Upload a transcript to begin.
+                    <div className="rounded-2xl border border-dashed border-slate-700 p-6 text-center text-sm text-slate-500">
+                      No recommendations yet. Upload a transcript to begin.
                     </div>
                   )}
                 </div>
               </section>
             </div>
 
-            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition duration-200 hover:shadow-md">
-              <div className="flex flex-wrap items-center justify-between gap-3">
+            {/* Approval History */}
+            <section className="rounded-3xl border border-slate-800 bg-slate-900/60 backdrop-blur-sm p-6">
+              <div className="flex items-center justify-between mb-5">
                 <div>
-                  <h3 className="text-lg font-semibold">Approval History</h3>
-                  <p className="text-sm text-slate-500">Newest approvals appear first.</p>
+                  <h3 className="font-bold text-white">Approval History</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Outcome learning — past approved actions for this customer</p>
                 </div>
-                <span className="text-sm text-slate-500">{historyItems.length} entries</span>
+                <span className="text-xs text-slate-500">{historyItems.length} entries</span>
               </div>
-              {historyLoading ? (
-                <div className="mt-4 flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                  <Spinner className="h-4 w-4" />
-                  Loading history…
-                </div>
-              ) : null}
-              {historyError ? (
-                <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{historyError}</div>
-              ) : null}
-              <div className="mt-4 overflow-x-auto">
-                {sortedHistoryItems.length > 0 ? (
-                  <table className="min-w-full divide-y divide-slate-200 text-sm">
-                    <thead className="sticky top-0 bg-white">
-                      <tr className="text-left text-slate-600">
-                        <th className="pb-3 font-semibold">Action</th>
-                        <th className="pb-3 font-semibold">Priority</th>
-                        <th className="pb-3 font-semibold">Confidence</th>
-                        <th className="pb-3 font-semibold">Approved At</th>
+              {historyLoading && <div className="flex items-center gap-2 text-sm text-slate-500 py-4"><Spinner className="h-4 w-4" /> Loading…</div>}
+              {historyError && <div className="rounded-xl border border-rose-700 bg-rose-900/30 px-4 py-3 text-sm text-rose-300">{historyError}</div>}
+              {!historyLoading && sortedHistory.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+                        <th className="pb-3 pr-4">Action</th>
+                        <th className="pb-3 pr-4">Priority</th>
+                        <th className="pb-3 pr-4">Confidence</th>
+                        <th className="pb-3">Approved At</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {sortedHistoryItems.map((item, index) => (
-                        <tr key={`${item.action || index}`} className="transition duration-200 hover:bg-slate-50">
-                          <td className="py-3 pr-4 font-medium text-slate-800">
-                            <span className="inline-flex items-center gap-2 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                              <span>✓</span> Approved
-                            </span>
-                            <div className="mt-2">{item.action || 'Approved recommendation'}</div>
+                    <tbody className="divide-y divide-slate-800">
+                      {sortedHistory.map((item, i) => (
+                        <tr key={i} className="hover:bg-slate-800/40 transition-colors">
+                          <td className="py-3 pr-4">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-900/50 border border-emerald-700/50 px-2 py-0.5 text-xs text-emerald-400 font-semibold mb-1">✓ Approved</span>
+                            <p className="text-slate-300 text-xs mt-1">{item.action || 'Approved recommendation'}</p>
                           </td>
-                          <td className="py-3 pr-4 text-slate-600">{item.priority || 'Unknown'}</td>
-                          <td className="py-3 pr-4 text-slate-600">{item.confidence ?? '—'}</td>
-                          <td className="py-3 text-slate-600">{formatTimestamp(item.approved_at)}</td>
+                          <td className="py-3 pr-4 text-slate-400 text-xs">{item.priority || '—'}</td>
+                          <td className="py-3 pr-4 text-slate-400 text-xs">{item.confidence ?? '—'}</td>
+                          <td className="py-3 text-slate-400 text-xs">{formatTimestamp(item.approved_at)}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                ) : (
-                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-600">
-                    No approval history found yet.
-                  </div>
-                )}
-              </div>
+                </div>
+              ) : !historyLoading && (
+                <div className="rounded-2xl border border-dashed border-slate-700 p-6 text-center text-sm text-slate-500">
+                  No approvals yet for this customer.
+                </div>
+              )}
             </section>
           </div>
         )}
-      </div>
+      </main>
     </div>
   );
+}
+
+function delay(ms) {
+  return new Promise(r => setTimeout(r, ms));
 }

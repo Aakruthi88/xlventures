@@ -36,10 +36,12 @@ def retrieve(query: str, top_k: int = 3) -> list:
     except Exception:
         collections = []
         
-    if "knowledge_base" not in collections:
-        print("[RAG Retriever] 'knowledge_base' collection not found. Initializing database dynamically...")
+    if "knowledge_memory" not in collections:
+        print("[RAG Retriever] 'knowledge_memory' collection not found. Initializing database dynamically...")
         from rag.loader import load_knowledge_base
         load_knowledge_base()
+        # Reinitialise client to pick up the newly built collection
+        client = chromadb.PersistentClient(path=str(db_dir))
         
     try:
         # Initialize SentenceTransformer embedding function
@@ -49,7 +51,7 @@ def retrieve(query: str, top_k: int = 3) -> list:
         
         # Get collection
         collection = client.get_collection(
-            name="knowledge_base",
+            name="knowledge_memory",
             embedding_function=emb_fn
         )
         

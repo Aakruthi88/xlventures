@@ -1,0 +1,57 @@
+INFO:     Started server process [10244]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+[AgentExecutor] LangGraph orchestration compiled with interrupt before action_execution_node.
+[AgentExecutor] Registered agent: customer_agent
+[AgentExecutor] Registered agent: knowledge_agent
+[AgentExecutor] Registered agent: sentiment_agent
+[AgentExecutor] Registered agent: risk_agent
+[AgentExecutor] Registered agent: opportunity_agent
+[AgentExecutor] Registered agent: memory_agent
+[AgentExecutor] Registered agent: recommendation_agent
+[AgentExecutor] Registered agent: explanation_agent
+[Planner] All agents registered. Dynamic orchestration ready.
+INFO:     127.0.0.1:57925 - "POST /upload_transcript HTTP/1.1" 200 OK
+C:\Users\HP\AppData\Local\Programs\Python\Python310\lib\site-packages\huggingface_hub\file_download.py:949: FutureWarning: `resume_download` is deprecated and will be removed in version 1.0.0. Downloads always resume when possible. If you want to force a new download, use `force_download=True`.
+  warnings.warn(
+C:\Users\HP\AppData\Local\Programs\Python\Python310\lib\site-packages\huggingface_hub\file_download.py:949: FutureWarning: `resume_download` is deprecated and will be removed in version 1.0.0. Downloads always resume when possible. If you want to force a new download, use `force_download=True`.
+  warnings.warn(
+
+==================================================
+[Planner] Starting dynamic workflow for session: 6376068a-4384-4484-8b6a-8ce2dbd5235a
+==================================================
+
+[Planner] Step 1: Generating execution plan...
+[LLM] Ollama is available at localhost:11434
+[LLM] Querying model: qwen2.5:0.5b
+[PlannerAgent] Goal: Address low analytics adoption and resolve slow SAP integration sync speed
+[PlannerAgent] Required agents: ['customer_agent', 'knowledge_agent', 'sentiment_agent', 'risk_agent', 'opportunity_agent']
+[PlannerAgent] Priority: High
+[PlannerAgent] Missing info: ['competitors considered']
+[Planner] Plan method: llm | Selected agents: ['customer_agent', 'knowledge_agent', 'sentiment_agent', 'risk_agent', 'opportunity_agent']
+
+[Planner] Step 2: Executing analysis agents...
+[AgentExecutor] Running customer_agent — Retrieve customer profile and usage data for baseline context.
+[AgentExecutor] Running knowledge_agent — Search technical docs and guides for slow SAP integration fixes.
+[Knowledge Search Tool] 'knowledge_memory' collection missing. Building dynamically...
+[RAG Loader] Initializing persistent ChromaDB at: C:\Users\HP\Desktop\Aakruthi\xlventures\project\backend\database\chromadb
+[RAG Loader] Cleaned up existing collection: knowledge_memory
+[RAG Loader] Loaded 10 chunks from 5 files into collection 'knowledge_memory'
+[Knowledge Search Tool] Error: Collection [knowledge_memory] does not exist
+[AgentExecutor] Running sentiment_agent — Analyze customer frustration regarding slow sync performance.
+[LLM] Querying model: qwen2.5:0.5b
+[AgentExecutor] Running risk_agent — Identify high risk of churn due to competitor evaluation and close renewal date.
+[AgentExecutor] Running opportunity_agent — Coordinate training for the new analytics dashboard to boost feature adoption.
+
+[Planner] Step 3: Running mandatory agents...
+[AgentExecutor] Running mandatory agent: recommendation_agent
+[RecommendationAgent] Warning: GROQ_API_KEY environment variable is not set. Using fallback.
+[AgentExecutor] Running mandatory agent: explanation_agent
+[Planner] HITL interrupt: state saved. Awaiting human approval.
+[Planner] Workflow paused. Agents executed: ['customer_agent', 'knowledge_agent', 'sentiment_agent', 'risk_agent', 'opportunity_agent']
+INFO:     127.0.0.1:57926 - "GET /recommendation/6376068a-4384-4484-8b6a-8ce2dbd5235a HTTP/1.1" 200 OK
+[Planner] Returning cached HITL state for session: 6376068a-4384-4484-8b6a-8ce2dbd5235a
+[MemoryAgent] Indexed scenario and decision in decision_memory: approval_6376068a-4384-4484-8b6a-8ce2dbd5235a_REC001
+INFO:     127.0.0.1:57952 - "POST /approve HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57953 - "GET /history/C001 HTTP/1.1" 200 OK

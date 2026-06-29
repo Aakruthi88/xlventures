@@ -1,369 +1,128 @@
 """
-Planner Agent (LangGraph Orchestrator)
-======================================
-Dynamically orchestrates specialized agents using LangGraph StateGraph.
+Planner (Orchestrator)
+======================
+Orchestrates the agentic workflow using PlannerAgent for dynamic
+reasoning and AgentExecutor for plan-driven execution.
 
 Architecture:
-    load_context -> planner_router -> [agent nodes based on selection] ->
-    recommendation_node -> explanation_node -> END
+    1. PlannerAgent analyzes the transcript and generates an execution plan.
+    2. AgentExecutor dynamically executes only the agents selected by the plan.
+    3. Mandatory agents (recommendation, explanation) always run after analysis.
+    4. State is checkpointed after recommendations for HITL approval.
+    5. resume_workflow() resumes execution with ActionExecutorAgent + OutcomeAgent.
 
-Phase 5: LangGraph with dynamic routing via Ollama + rule-based fallback.
+Human-In-The-Loop (HITL) Flow:
+    run(session_id)          → Runs to recommendation stage, saves paused state
+    resume_workflow(...)     → Resumes after approval, runs action + outcome agents
 """
 
 import sys
 import os
-from typing import Any, Dict, List, Annotated
-import operator
+from typing import Any, Dict
 
 # Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
 
-from agents import customer_agent
-from agents import knowledge_agent
-from agents import sentiment_agent
-from agents import risk_agent
-from agents import opportunity_agent
-from agents import recommendation_agent
-from agents import explanation_agent
-from agents import memory_agent
-from agents.planner_router import route_agents
+from agents.planner_agent import PlannerAgent
+from agents.customer_agent import CustomerAgent
+from agents.knowledge_agent import KnowledgeAgent
+from agents.sentiment_agent import SentimentAgent
+from agents.risk_agent import RiskAgent
+from agents.opportunity_agent import OpportunityAgent
+from agents.recommendation_agent import RecommendationAgent
+from agents.explanation_agent import ExplanationAgent
+from agents.memory_agent import MemoryAgent
 
-# LangGraph imports
-try:
-    from langgraph.graph import StateGraph, END
-    from typing_extensions import TypedDict
-    LANGGRAPH_AVAILABLE = True
-    print("[Planner] LangGraph loaded successfully")
-except ImportError:
-    LANGGRAPH_AVAILABLE = False
-    print("[Planner] LangGraph not installed - using sequential fallback")
+from graph.agent_executor import (
+    register_agent,
+    execute_plan,
+    run_mandatory_agents,
+    get_trace,
+    graph,  # LangGraph compiled graph (used for trace/visualization)
+)
+
+# ============================================================
+# SESSION & HITL STATE STORES
+# ============================================================
 
 # In-memory session store (shared with main.py)
 sessions = {}
 
-
-# ============================================================
-# LANGGRAPH STATE DEFINITION
-# ============================================================
-
-if LANGGRAPH_AVAILABLE:
-    class PlannerState(TypedDict):
-        """State schema for the LangGraph planner workflow."""
-        session_id: str
-        customer_id: str
-        transcript_text: str
-        selected_agents: list
-        routing_reasoning: str
-        customer_summary: dict
-        knowledge: dict
-        sentiment: dict
-        risks: dict
-        opportunities: dict
-        recommendations: dict
-        explanations: dict
+# HITL checkpoint: stores the full analysis state after recommendations
+# so resume_workflow() can pick up exactly where we paused.
+_paused_states: Dict[str, dict] = {}
 
 
 # ============================================================
-# LANGGRAPH NODE FUNCTIONS
+# AGENT REGISTRATION
 # ============================================================
 
-def load_context_node(state: dict) -> dict:
-    """Load session data into the workflow state."""
-    session = sessions.get(state.get("session_id", ""), {})
-    customer_id = session.get("customer_id", "C001")
-    transcript_text = session.get("transcript_text", "")
-    print(f"\n[Planner] Loading context for session: {state.get('session_id', 'unknown')}")
-    print(f"[Planner] Customer: {customer_id}")
-    print(f"[Planner] Transcript length: {len(transcript_text)} chars")
-    return {
-        **state,
-        "customer_id": customer_id,
-        "transcript_text": transcript_text
-    }
+_planner_agent = PlannerAgent()
+_customer_agent = CustomerAgent()
+_knowledge_agent = KnowledgeAgent()
+_sentiment_agent = SentimentAgent()
+_risk_agent = RiskAgent()
+_opportunity_agent = OpportunityAgent()
+_recommendation_agent = RecommendationAgent()
+_explanation_agent = ExplanationAgent()
+_memory_agent = MemoryAgent()
+
+# Analysis agents — dynamically selected by the planner
+register_agent(_customer_agent)
+register_agent(_knowledge_agent)
+register_agent(_sentiment_agent)
+register_agent(_risk_agent)
+register_agent(_opportunity_agent)
+register_agent(_memory_agent)
+
+# Mandatory agents — always run after analysis
+register_agent(_recommendation_agent)
+register_agent(_explanation_agent)
+
+print("[Planner] All agents registered. Dynamic orchestration ready.")
 
 
-def router_node(state: dict) -> dict:
-    """Dynamically decide which agents to execute."""
-    transcript_text = state.get("transcript_text", "")
-    routing = route_agents(transcript_text)
+# ============================================================
+# PUBLIC API — run(session_id)   [Phase 1 of HITL]
+# ============================================================
 
-    selected = routing.get("agents", [])
-    reasoning = routing.get("reasoning", "")
-    method = routing.get("method", "rules")
-
-    print(f"\n[Planner] Routing method: {method}")
-    print(f"[Planner] Selected agents: {selected}")
-    print(f"[Planner] Reasoning: {reasoning}")
-
-    return {
-        **state,
-        "selected_agents": selected,
-        "routing_reasoning": reasoning
-    }
-
-
-def customer_agent_node(state: dict) -> dict:
-    """Run customer_agent if selected."""
-    if "customer_agent" not in state.get("selected_agents", []):
-        print("[Planner] Skipping customer_agent (not selected)")
-        return state
-    try:
-        print("[Planner] Running customer_agent...")
-        result = customer_agent.get_summary(state.get("customer_id", "C001"))
-        return {**state, "customer_summary": result}
-    except Exception as e:
-        print(f"[Planner] customer_agent failed: {e}")
-        return {**state, "customer_summary": customer_agent.get_summary("C001")}
-
-
-def knowledge_agent_node(state: dict) -> dict:
-    """Run knowledge_agent if selected."""
-    if "knowledge_agent" not in state.get("selected_agents", []):
-        print("[Planner] Skipping knowledge_agent (not selected)")
-        return state
-    try:
-        print("[Planner] Running knowledge_agent...")
-        result = knowledge_agent.retrieve(state.get("transcript_text", ""))
-        return {**state, "knowledge": result}
-    except Exception as e:
-        print(f"[Planner] knowledge_agent failed: {e}")
-        return {**state, "knowledge": {"retrieved_docs": []}}
-
-
-def sentiment_agent_node(state: dict) -> dict:
-    """Run sentiment_agent if selected."""
-    if "sentiment_agent" not in state.get("selected_agents", []):
-        print("[Planner] Skipping sentiment_agent (not selected)")
-        return state
-    try:
-        print("[Planner] Running sentiment_agent...")
-        result = sentiment_agent.analyze(state.get("transcript_text", ""))
-        return {**state, "sentiment": result}
-    except Exception as e:
-        print(f"[Planner] sentiment_agent failed: {e}")
-        return {**state, "sentiment": {"sentiment": "Neutral", "confidence": 0.5, "key_phrases": []}}
-
-
-def risk_agent_node(state: dict) -> dict:
-    """Run risk_agent if selected."""
-    if "risk_agent" not in state.get("selected_agents", []):
-        print("[Planner] Skipping risk_agent (not selected)")
-        return state
-    try:
-        print("[Planner] Running risk_agent...")
-        result = risk_agent.assess(
-            state.get("customer_summary", {}),
-            state.get("sentiment", {}),
-            state.get("knowledge", {})
-        )
-        return {**state, "risks": result}
-    except Exception as e:
-        print(f"[Planner] risk_agent failed: {e}")
-        return {**state, "risks": {"risks": [], "overall_risk": "Unknown"}}
-
-
-def opportunity_agent_node(state: dict) -> dict:
-    """Run opportunity_agent if selected."""
-    if "opportunity_agent" not in state.get("selected_agents", []):
-        print("[Planner] Skipping opportunity_agent (not selected)")
-        return state
-    try:
-        print("[Planner] Running opportunity_agent...")
-        result = opportunity_agent.find(
-            state.get("customer_summary", {}),
-            state.get("knowledge", {})
-        )
-        return {**state, "opportunities": result}
-    except Exception as e:
-        print(f"[Planner] opportunity_agent failed: {e}")
-        return {**state, "opportunities": {"opportunities": []}}
-
-
-def recommendation_node(state: dict) -> dict:
-    """Always runs - generates next best actions from all agent outputs."""
-    try:
-        print("[Planner] Running recommendation_agent...")
-        past_approvals = memory_agent.get_similar_past_approvals(
-            state.get("customer_id", "C001")
-        )
-        result = recommendation_agent.generate(
-            state.get("customer_summary", {}),
-            state.get("risks", {}),
-            state.get("opportunities", {}),
-            state.get("sentiment", {}),
-            state.get("knowledge", {}),
-            past_approvals=past_approvals
-        )
-        return {**state, "recommendations": result}
-    except Exception as e:
-        print(f"[Planner] recommendation_agent failed: {e}")
-        return {**state, "recommendations": {"recommendations": []}}
-
-
-def explanation_node(state: dict) -> dict:
-    """Always runs - explains recommendations with evidence."""
-    try:
-        print("[Planner] Running explanation_agent...")
-        result = explanation_agent.explain(
-            state.get("recommendations", {}),
-            customer_summary=state.get("customer_summary", {}),
-            risks=state.get("risks", {}),
-            knowledge_docs=state.get("knowledge", {})
-        )
-        return {**state, "explanations": result}
-    except Exception as e:
-        print(f"[Planner] explanation_agent failed: {e}")
-        return {**state, "explanations": {"explanations": []}}
-
-
-def route_to_customer(state: dict) -> str:
-    if "customer_agent" in state.get("selected_agents", []):
-        return "customer_agent"
-    return "knowledge_agent"
-
-
-def route_to_knowledge(state: dict) -> str:
-    if "knowledge_agent" in state.get("selected_agents", []):
-        return "knowledge_agent"
-    return "sentiment_agent"
-
-
-def route_to_sentiment(state: dict) -> str:
-    if "sentiment_agent" in state.get("selected_agents", []):
-        return "sentiment_agent"
-    return "risk_agent"
-
-
-def route_to_risk(state: dict) -> str:
-    if "risk_agent" in state.get("selected_agents", []):
-        return "risk_agent"
-    return "opportunity_agent"
-
-
-def route_to_opportunity(state: dict) -> str:
-    if "opportunity_agent" in state.get("selected_agents", []):
-        return "opportunity_agent"
-    return "recommendation"
-
-
-def build_graph():
+def run(session_id: str) -> dict:
     """
-    Construct the LangGraph StateGraph with all agent nodes.
+    Execute the planner workflow up to the HITL interrupt point.
 
-    Graph topology:
-        START -> load_context -> planner_router ->
-        [customer_agent] -> [knowledge_agent] -> [sentiment_agent] ->
-        [risk_agent] -> [opportunity_agent] ->
-        recommendation -> explanation -> END
-        
-    Each edge is conditional: if the target agent is not selected,
-    the workflow dynamically bypasses it to the next node in the sequence.
+    1. PlannerAgent selects required agents.
+    2. AgentExecutor runs selected agents.
+    3. Mandatory agents (recommendation, explanation) run.
+    4. State is saved to _paused_states for HITL resumption.
+
+    On subsequent calls for the same session the cached state is returned
+    immediately — avoiding a redundant re-run while the user decides.
+
+    Returns:
+        Dict with: customer_summary, knowledge, sentiment, risks,
+                   opportunities, recommendations, explanations, past_cases
     """
-    workflow = StateGraph(PlannerState)
+    # ── Return cached state if already computed ──────────────────────────────
+    if session_id in _paused_states:
+        state = _paused_states[session_id]
+        print(f"[Planner] Returning cached HITL state for session: {session_id}")
+        return _build_response(state)
 
-    # Add all nodes
-    workflow.add_node("load_context", load_context_node)
-    workflow.add_node("planner_router", router_node)
-    workflow.add_node("customer_agent", customer_agent_node)
-    workflow.add_node("knowledge_agent", knowledge_agent_node)
-    workflow.add_node("sentiment_agent", sentiment_agent_node)
-    workflow.add_node("risk_agent", risk_agent_node)
-    workflow.add_node("opportunity_agent", opportunity_agent_node)
-    workflow.add_node("recommendation", recommendation_node)
-    workflow.add_node("explanation", explanation_node)
+    print(f"\n{'=' * 50}")
+    print(f"[Planner] Starting dynamic workflow for session: {session_id}")
+    print(f"{'=' * 50}")
 
-    # Set entry point
-    workflow.set_entry_point("load_context")
-
-    # Connect context loading and router
-    workflow.add_edge("load_context", "planner_router")
-    
-    # Conditional dynamic routing chain
-    workflow.add_conditional_edges(
-        "planner_router",
-        route_to_customer,
-        {
-            "customer_agent": "customer_agent",
-            "knowledge_agent": "knowledge_agent"
-        }
-    )
-
-    workflow.add_conditional_edges(
-        "customer_agent",
-        route_to_knowledge,
-        {
-            "knowledge_agent": "knowledge_agent",
-            "sentiment_agent": "sentiment_agent"
-        }
-    )
-
-    workflow.add_conditional_edges(
-        "knowledge_agent",
-        route_to_sentiment,
-        {
-            "sentiment_agent": "sentiment_agent",
-            "risk_agent": "risk_agent"
-        }
-    )
-
-    workflow.add_conditional_edges(
-        "sentiment_agent",
-        route_to_risk,
-        {
-            "risk_agent": "risk_agent",
-            "opportunity_agent": "opportunity_agent"
-        }
-    )
-
-    workflow.add_conditional_edges(
-        "risk_agent",
-        route_to_opportunity,
-        {
-            "opportunity_agent": "opportunity_agent",
-            "recommendation": "recommendation"
-        }
-    )
-
-    workflow.add_edge("opportunity_agent", "recommendation")
-    workflow.add_edge("recommendation", "explanation")
-    workflow.add_edge("explanation", END)
-
-    return workflow.compile()
-
-
-
-
-# Build the graph at module load time
-_graph = None
-if LANGGRAPH_AVAILABLE:
-    try:
-        _graph = build_graph()
-        print("[Planner] LangGraph workflow compiled successfully")
-    except Exception as e:
-        print(f"[Planner] LangGraph compilation failed: {e}")
-        _graph = None
-
-
-# ============================================================
-# SEQUENTIAL FALLBACK (if LangGraph unavailable)
-# ============================================================
-
-def run_sequential(session_id: str) -> dict:
-    """
-    Fallback sequential orchestration without LangGraph.
-    Used when LangGraph is not installed.
-    """
-    print("[Planner] Using sequential fallback (no LangGraph)")
     session = sessions.get(session_id, {})
     customer_id = session.get("customer_id", "C001")
     transcript_text = session.get("transcript_text", "")
 
-    # Route agents
-    routing = route_agents(transcript_text)
-    selected = routing.get("agents", [])
-    print(f"[Planner] Selected agents: {selected}")
-
-    result = {
+    # Initialise shared state
+    state = {
+        "session_id": session_id,
+        "customer_id": customer_id,
+        "transcript_text": transcript_text,
         "customer_summary": {},
         "knowledge": {},
         "sentiment": {},
@@ -371,128 +130,146 @@ def run_sequential(session_id: str) -> dict:
         "opportunities": {},
         "recommendations": {},
         "explanations": {},
+        "past_cases": [],
+        "approval_decision": {},
+        "action_execution": {},
+        "outcome_learning": {},
     }
 
-    if "customer_agent" in selected:
-        try:
-            result["customer_summary"] = customer_agent.get_summary(customer_id)
-        except Exception as e:
-            print(f"[Planner] customer_agent failed: {e}")
+    # Step 1: PlannerAgent generates execution plan
+    print(f"\n[Planner] Step 1: Generating execution plan...")
+    plan_result = _planner_agent.execute(state)
+    plan = plan_result.get("plan", {})
+    state["plan"] = plan
 
-    if "knowledge_agent" in selected:
-        try:
-            result["knowledge"] = knowledge_agent.retrieve(transcript_text)
-        except Exception as e:
-            print(f"[Planner] knowledge_agent failed: {e}")
+    method = plan.get("_method", "unknown")
+    agent_names = [a["name"] for a in plan.get("required_agents", [])]
+    print(f"[Planner] Plan method: {method} | Selected agents: {agent_names}")
 
-    if "sentiment_agent" in selected:
-        try:
-            result["sentiment"] = sentiment_agent.analyze(transcript_text)
-        except Exception as e:
-            print(f"[Planner] sentiment_agent failed: {e}")
+    # Step 2: Execute selected analysis agents
+    print(f"\n[Planner] Step 2: Executing analysis agents...")
+    state = execute_plan(session_id, plan, state)
 
-    if "risk_agent" in selected:
-        try:
-            result["risks"] = risk_agent.assess(
-                result["customer_summary"], result["sentiment"], result["knowledge"]
-            )
-        except Exception as e:
-            print(f"[Planner] risk_agent failed: {e}")
+    # Step 3: Run mandatory agents (recommendation + explanation)
+    print(f"\n[Planner] Step 3: Running mandatory agents...")
+    state = run_mandatory_agents(
+        session_id, state,
+        mandatory_names=["recommendation_agent", "explanation_agent"]
+    )
 
-    if "opportunity_agent" in selected:
-        try:
-            result["opportunities"] = opportunity_agent.find(
-                result["customer_summary"], result["knowledge"]
-            )
-        except Exception as e:
-            print(f"[Planner] opportunity_agent failed: {e}")
+    # -- HITL INTERRUPT: checkpoint the full state before action execution ----
+    _paused_states[session_id] = dict(state)
+    print(f"[Planner] HITL interrupt: state saved. Awaiting human approval.")
 
-    try:
-        past_approvals = memory_agent.get_similar_past_approvals(customer_id)
-        result["recommendations"] = recommendation_agent.generate(
-            result["customer_summary"], result["risks"],
-            result["opportunities"], result["sentiment"],
-            result["knowledge"], past_approvals=past_approvals
-        )
-    except Exception as e:
-        print(f"[Planner] recommendation_agent failed: {e}")
-
-    try:
-        result["explanations"] = explanation_agent.explain(
-            result["recommendations"],
-            customer_summary=result["customer_summary"],
-            risks=result["risks"],
-            knowledge_docs=result["knowledge"]
-        )
-    except Exception as e:
-        print(f"[Planner] explanation_agent failed: {e}")
-
-    return result
+    print(f"[Planner] Workflow paused. Agents executed: {agent_names}")
+    return _build_response(state)
 
 
 # ============================================================
-# PUBLIC API - run(session_id)
+# PUBLIC API — resume_workflow()  [Phase 2 of HITL]
 # ============================================================
 
-def run(session_id: str) -> dict:
+def resume_workflow(session_id: str, rec_id: str, approved: bool) -> dict:
     """
-    Execute the planner workflow for a given session.
+    Resume execution after human-in-the-loop approval decision.
 
-    Uses LangGraph if available, falls back to sequential execution.
-    Always returns a dict matching the API contract with all 7 keys.
+    Retrieves the paused state, injects the approval decision, then runs:
+        ActionExecutorAgent → executes the approved business action
+        OutcomeAgent        → logs before/after health score & success flag
 
     Args:
-        session_id: Session identifier from /upload_transcript
+        session_id: Session identifier.
+        rec_id:     The recommendation ID the user approved/rejected.
+        approved:   True = proceed with execution; False = reject.
 
     Returns:
-        Dict with: customer_summary, knowledge, sentiment, risks,
-                   opportunities, recommendations, explanations
+        action_execution dict: { status, action }
     """
-    print(f"\n{'=' * 50}")
-    print(f"[Planner] Starting workflow for session: {session_id}")
-    print(f"{'=' * 50}")
+    if session_id not in _paused_states:
+        raise ValueError(
+            f"No paused state found for session '{session_id}'. "
+            "Call run() first to generate recommendations."
+        )
 
-    if _graph is not None:
-        # Use LangGraph workflow
-        try:
-            initial_state = {
-                "session_id": session_id,
-                "customer_id": "",
-                "transcript_text": "",
-                "selected_agents": [],
-                "routing_reasoning": "",
-                "customer_summary": {},
-                "knowledge": {},
-                "sentiment": {},
-                "risks": {},
-                "opportunities": {},
-                "recommendations": {},
-                "explanations": {},
-            }
+    state = dict(_paused_states[session_id])
 
-            final_state = _graph.invoke(initial_state)
+    # Resolve the action text for the approved recommendation
+    recs_list = state.get("recommendations", {}).get("recommendations", [])
+    action_text = ""
+    for r in recs_list:
+        if isinstance(r, dict) and r.get("id") == rec_id:
+            action_text = r.get("action", "")
+            break
 
-            # Extract API response from final state
-            response = {
-                "customer_summary": final_state.get("customer_summary", {}),
-                "knowledge": final_state.get("knowledge", {}),
-                "sentiment": final_state.get("sentiment", {}),
-                "risks": final_state.get("risks", {}),
-                "opportunities": final_state.get("opportunities", {}),
-                "recommendations": final_state.get("recommendations", {}),
-                "explanations": final_state.get("explanations", {}),
-            }
+    state["approval_decision"] = {
+        "recommendation_id": rec_id,
+        "recommendation_action": action_text,
+        "approved": approved,
+    }
 
-            print(f"\n[Planner] Workflow completed via LangGraph")
-            print(f"[Planner] Agents executed: {final_state.get('selected_agents', [])}")
-            print(f"[Planner] Routing: {final_state.get('routing_reasoning', 'N/A')}")
+    print(f"\n[Planner] >> Resuming workflow for session {session_id}")
+    print(f"[Planner]   rec_id={rec_id} | approved={approved} | action='{action_text}'")
 
-            return response
+    if not approved:
+        print("[Planner] Action rejected by user — skipping execution.")
+        return {"status": "rejected", "action": "Action was not approved."}
 
-        except Exception as e:
-            print(f"[Planner] LangGraph execution failed: {e}")
-            print("[Planner] Falling back to sequential execution...")
-            return run_sequential(session_id)
-    else:
-        # LangGraph not available
-        return run_sequential(session_id)
+    # Step 4: ActionExecutorAgent — execute the approved action
+    from agents.action_executor_agent import ActionExecutorAgent
+    executor = ActionExecutorAgent()
+    print("[Planner] Step 4: Running ActionExecutorAgent...")
+    exec_result = executor.execute(state)
+    state.update(exec_result)
+
+    # Step 5: OutcomeAgent — log metrics to database
+    from agents.outcome_agent import OutcomeAgent
+    outcome = OutcomeAgent()
+    print("[Planner] Step 5: Running OutcomeAgent...")
+    out_result = outcome.execute(state)
+    state.update(out_result)
+
+    # Update checkpoint with execution results
+    _paused_states[session_id] = state
+
+    print(f"[Planner] Workflow resumed and completed for session: {session_id}")
+    return state.get("action_execution", {"status": "success", "action": "Action executed."})
+
+
+# ============================================================
+# HELPERS
+# ============================================================
+
+def _build_response(state: dict) -> dict:
+    """Build the standard API response dict from a state dict."""
+    return {
+        "customer_summary": state.get("customer_summary", {}),
+        "knowledge": state.get("knowledge", {}),
+        "sentiment": state.get("sentiment", {}),
+        "risks": state.get("risks", {}),
+        "opportunities": state.get("opportunities", {}),
+        "recommendations": state.get("recommendations", {}),
+        "explanations": state.get("explanations", {}),
+        "past_cases": state.get("past_cases", []),
+    }
+
+
+def get_session_trace(session_id: str) -> list:
+    """Return the execution trace for a session."""
+    return get_trace(session_id)
+
+
+def get_graph_structure() -> dict:
+    """Return the LangGraph node/edge structure for frontend visualization."""
+    return {
+        "nodes": [
+            {"id": "planner_node",          "label": "Planner Agent",         "type": "planner"},
+            {"id": "analysis_node",          "label": "Analysis Agents",       "type": "analysis"},
+            {"id": "decision_node",          "label": "Recommendation Agent",  "type": "decision"},
+            {"id": "action_execution_node",  "label": "Action Executor",       "type": "action"},
+        ],
+        "edges": [
+            {"source": "planner_node",         "target": "analysis_node"},
+            {"source": "analysis_node",         "target": "decision_node"},
+            {"source": "decision_node",         "target": "action_execution_node", "label": "HITL Interrupt"},
+        ]
+    }

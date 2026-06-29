@@ -86,7 +86,7 @@ def load_knowledge_base(path: str = "data/knowledge_base/") -> None:
         model_name="all-MiniLM-L6-v2"
     )
     
-    collection_name = "knowledge_base"
+    collection_name = "knowledge_memory"
     
     # Recreate the collection to avoid duplicates or updates sync issues
     try:

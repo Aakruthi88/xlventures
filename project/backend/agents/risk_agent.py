@@ -4,11 +4,60 @@ Risk Agent
 Identifies and assesses risks based on customer data, sentiment,
 and knowledge base context using rule-based logic.
 
-Phase 9: Implements real rule-based risk assessment.
+Refactored: Uses usage_analysis_tool and customer_history_tool.
+No direct database or file access.
 """
 
+from typing import Any, Dict, List
 
-def assess(customer_summary: dict, sentiment: dict, knowledge_docs: dict) -> dict:
+from agents.base_agent import BaseAgent
+from tools.usage_analysis_tool import analyze_usage_metrics
+from tools.customer_history_tool import get_customer_history
+
+
+class RiskAgent(BaseAgent):
+    """
+    Identifies churn risks, renewal risks, and competitive threats
+    by invoking usage_analysis and customer_history tools.
+    """
+
+    def __init__(self):
+        super().__init__(
+            name="risk_agent",
+            description="Identifies churn risks, renewal risks, and competitive threats using tools.",
+            tools=[analyze_usage_metrics, get_customer_history]
+        )
+
+    def execute(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute risk assessment.
+
+        Args:
+            state: Should contain 'customer_summary', 'sentiment', 'knowledge'.
+                   Falls back to tool calls if customer_summary is incomplete.
+
+        Returns:
+            Dict with 'risks' key.
+        """
+        customer_id = state.get("customer_id", "C001")
+        customer_summary = state.get("customer_summary", {})
+        sentiment = state.get("sentiment", {})
+        knowledge_docs = state.get("knowledge", {})
+
+        # Enrich customer_summary via tool call if it is incomplete
+        if not customer_summary or not customer_summary.get("health_score"):
+            try:
+                usage = analyze_usage_metrics.invoke({"customer_id": customer_id})
+                if usage:
+                    customer_summary = {**customer_summary, **usage}
+            except Exception as e:
+                print(f"[RiskAgent] Tool call failed: {e}")
+
+        result = _assess(customer_summary, sentiment, knowledge_docs)
+        return {"risks": result}
+
+
+def _assess(customer_summary: dict, sentiment: dict, knowledge_docs: dict) -> dict:
     """
     Assess risks for a customer based on their summary, sentiment, and KB context.
 
@@ -22,6 +71,8 @@ def assess(customer_summary: dict, sentiment: dict, knowledge_docs: dict) -> dic
     """
     risks = []
 
+    health_score = customer_summary.get("health_score")
+
     # 1. Renewal Risk: If days_to_renewal <= 30
     days_to_renewal = customer_summary.get("days_to_renewal")
     if days_to_renewal is not None:
@@ -29,10 +80,13 @@ def assess(customer_summary: dict, sentiment: dict, knowledge_docs: dict) -> dic
             days = int(days_to_renewal)
             if days <= 30:
                 severity = "High" if days <= 15 else "Medium"
+                health_part = ""
+                if health_score is not None:
+                    health_part = f" Health score is {health_score}."
                 risks.append({
                     "type": "Renewal Risk",
                     "severity": severity,
-                    "evidence": f"Customer contract renewal is approaching in {days} days."
+                    "evidence": f"Customer contract renewal is approaching in {days} days.{health_part}"
                 })
         except (ValueError, TypeError):
             pass
@@ -76,7 +130,7 @@ def assess(customer_summary: dict, sentiment: dict, knowledge_docs: dict) -> dic
                 "evidence": f"Elevated churn indicator: customer meeting transcript exhibits {sentiment_str} sentiment."
             })
 
-    # Determine overall_risk (highest severity present: High > Medium > Low)
+    # Determine overall_risk
     severities = {r["severity"] for r in risks}
     if "High" in severities:
         overall_risk = "High"
@@ -90,3 +144,9 @@ def assess(customer_summary: dict, sentiment: dict, knowledge_docs: dict) -> dic
         "overall_risk": overall_risk
     }
 
+
+# ── Module-level backward-compatible function ─────────────────────────────────
+
+def assess(customer_summary: dict, sentiment: dict, knowledge_docs: dict) -> dict:
+    """Backward-compatible wrapper."""
+    return _assess(customer_summary, sentiment, knowledge_docs)

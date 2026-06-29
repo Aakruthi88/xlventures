@@ -89,7 +89,7 @@ def query_llm(prompt: str, system_prompt: str = "", model: str = None) -> str:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        response = ollama.chat(model=model, messages=messages)
+        response = ollama.chat(model=model, messages=messages, options={"temperature": 0.0})
         return response["message"]["content"]
     except Exception as e:
         print(f"[LLM] Ollama query failed for model {model}: {e}")
