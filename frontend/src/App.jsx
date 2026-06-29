@@ -252,8 +252,26 @@ function prioritySortValue(priority) {
   return PRIORITY_ORDER[(priority || '').toLowerCase()] ?? 99;
 }
 
+// Normalise an evidence item to a plain string.
+// The new agentic backend returns evidence as [{source, data}] objects;
+// the old format was plain strings. Both are handled here.
+function evidenceToString(item) {
+  if (!item) return '';
+  if (typeof item === 'string') return item;
+  if (typeof item === 'object') {
+    // {source, data} shape from the new ExplanationAgent
+    const parts = [];
+    if (item.source) parts.push(String(item.source));
+    if (item.data)   parts.push(String(item.data));
+    return parts.join(': ');
+  }
+  return String(item);
+}
+
 // Classify a single evidence string into a source bucket using keyword heuristics
-function classifyEvidence(text) {
+function classifyEvidence(item) {
+  const text = evidenceToString(item);
+  if (!text) return null;
   const t = text.toLowerCase();
   if (t.includes('transcript') || t.includes('meeting') || t.includes('call') || t.includes('said') || t.includes('mentioned') || t.includes('customer stated')) return 'Meeting Transcript';
   if (t.includes('crm') || t.includes('owner') || t.includes('champion') || t.includes('last meeting') || t.includes('account')) return 'CRM';
@@ -262,17 +280,20 @@ function classifyEvidence(text) {
   return null; // ungrouped
 }
 
-// Group evidence strings into source buckets; uncategorised items go into a general list
+// Group evidence items into source buckets; uncategorised items go into a general list.
+// Each item is normalised to a string before classification and storage.
 function groupEvidence(evidenceList) {
   const buckets = {};
   const ungrouped = [];
-  for (const item of evidenceList) {
-    const bucket = classifyEvidence(item);
+  for (const item of (evidenceList || [])) {
+    const str = evidenceToString(item);
+    if (!str) continue;
+    const bucket = classifyEvidence(str);
     if (bucket) {
       if (!buckets[bucket]) buckets[bucket] = [];
-      buckets[bucket].push(item);
+      buckets[bucket].push(str);
     } else {
-      ungrouped.push(item);
+      ungrouped.push(str);
     }
   }
   return { buckets, ungrouped };
@@ -560,7 +581,7 @@ function RecommendationCard({ rec, idx, explanation, sessionId, onToast }) {
             <>
               {/* Reason + confidence */}
               <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                <p className="text-sm leading-relaxed text-slate-700 max-w-2xl">{explanation.reason}</p>
+                <p className="text-sm leading-relaxed text-slate-700 max-w-2xl">{explanation.reason || explanation.reasoning}</p>
                 {explanation.confidence != null ? (
                   <span className="shrink-0 mt-1 sm:mt-0 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 self-start">
                     {Math.round(explanation.confidence * 100)}% confidence
@@ -646,8 +667,14 @@ function AnalysisResults({ analysisResult, analysisCustomerId, activeSessionId, 
     healthScore !== null || risks.length > 0 || recommendations.length > 0
   );
 
-  // Build a map from recommendation_id -> explanation for the explainability section
-  const explainMap = Object.fromEntries(explanations.map((e) => [e.recommendation_id, e]));
+  // Build a map from recommendation_id -> explanation for the explainability section.
+  // Defensively filter out any null/undefined entries or entries without a recommendation_id
+  // to prevent crashes when the backend returns unexpected shapes.
+  const explainMap = Object.fromEntries(
+    (explanations || [])
+      .filter((e) => e && typeof e === 'object' && e.recommendation_id)
+      .map((e) => [e.recommendation_id, e])
+  );
 
   // Toast queue 
   const [toasts, setToasts] = useState([]);
@@ -930,8 +957,8 @@ function AnalysisResults({ analysisResult, analysisCustomerId, activeSessionId, 
                   
                   <div className="min-w-0">
                     <p className="font-semibold text-slate-800 text-sm">{sourceName(doc)}</p>
-                    {doc.content ? (
-                      <p className="mt-1 text-xs leading-relaxed text-slate-500 line-clamp-2">{String(doc.content).slice(0, 160)}{String(doc.content).length > 160 ? '...' : ''}</p>
+                    {(doc.content || doc.snippet) ? (
+                      <p className="mt-1 text-xs leading-relaxed text-slate-500 line-clamp-2">{String(doc.content || doc.snippet).slice(0, 160)}{String(doc.content || doc.snippet).length > 160 ? '...' : ''}</p>
                     ) : null}
                   </div>
                 </li>
