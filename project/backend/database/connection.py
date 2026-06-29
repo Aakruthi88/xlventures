@@ -22,6 +22,8 @@ from database.models import (
     CREATE_APPROVALS_TABLE_SQLITE,
     CREATE_OUTCOMES_TABLE,
     CREATE_OUTCOMES_TABLE_SQLITE,
+    CREATE_BUSINESS_METRICS_TABLE,
+    CREATE_BUSINESS_METRICS_TABLE_SQLITE,
 )
 
 # Load environment variables
@@ -89,12 +91,14 @@ def _initialize_tables(conn: Any) -> None:
         cursor.execute(CREATE_RECOMMENDATIONS_TABLE)
         cursor.execute(CREATE_APPROVALS_TABLE)
         cursor.execute(CREATE_OUTCOMES_TABLE)
+        cursor.execute(CREATE_BUSINESS_METRICS_TABLE)
     else:
         cursor.execute(CREATE_CUSTOMERS_TABLE)
         cursor.execute(CREATE_INTERACTIONS_TABLE_SQLITE)
         cursor.execute(CREATE_RECOMMENDATIONS_TABLE)
         cursor.execute(CREATE_APPROVALS_TABLE_SQLITE)
         cursor.execute(CREATE_OUTCOMES_TABLE_SQLITE)
+        cursor.execute(CREATE_BUSINESS_METRICS_TABLE_SQLITE)
 
 
 def _seed_customers_data(conn: Any) -> None:

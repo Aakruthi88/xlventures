@@ -117,6 +117,12 @@ def execute_plan(session_id: str, plan: dict, state: dict) -> dict:
         output_data=plan
     )
 
+    try:
+        from metrics.business_metrics import BusinessMetricsService
+        BusinessMetricsService.record_agent_execution(session_id, "planner_agent")
+    except Exception as e:
+        print(f"[AgentExecutor] Metrics error: {e}")
+
     # Execute each required agent in order
     for agent_spec in required_agents:
         agent_name = agent_spec.get("name", "")
@@ -130,6 +136,12 @@ def execute_plan(session_id: str, plan: dict, state: dict) -> dict:
 
         agent = _agent_registry[agent_name]
         print(f"[AgentExecutor] Running {agent_name} — {agent_reason}")
+
+        try:
+            from metrics.business_metrics import BusinessMetricsService
+            BusinessMetricsService.record_agent_execution(session_id, agent_name)
+        except Exception as e:
+            print(f"[AgentExecutor] Metrics error: {e}")
 
         try:
             result = agent.execute(state)
@@ -169,6 +181,12 @@ def run_mandatory_agents(session_id: str, state: dict,
 
         agent = _agent_registry[agent_name]
         print(f"[AgentExecutor] Running mandatory agent: {agent_name}")
+
+        try:
+            from metrics.business_metrics import BusinessMetricsService
+            BusinessMetricsService.record_agent_execution(session_id, agent_name)
+        except Exception as e:
+            print(f"[AgentExecutor] Metrics error: {e}")
 
         try:
             result = agent.execute(state)

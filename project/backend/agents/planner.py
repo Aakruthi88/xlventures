@@ -118,6 +118,12 @@ def run(session_id: str) -> dict:
     customer_id = session.get("customer_id", "C001")
     transcript_text = session.get("transcript_text", "")
 
+    try:
+        from metrics.business_metrics import BusinessMetricsService
+        BusinessMetricsService.start_session_tracking(session_id, customer_id)
+    except Exception as e:
+        print(f"[Planner] Metrics error starting session: {e}")
+
     # Initialise shared state
     state = {
         "session_id": session_id,
@@ -160,6 +166,15 @@ def run(session_id: str) -> dict:
     # -- HITL INTERRUPT: checkpoint the full state before action execution ----
     _paused_states[session_id] = dict(state)
     print(f"[Planner] HITL interrupt: state saved. Awaiting human approval.")
+
+    try:
+        from metrics.business_metrics import BusinessMetricsService
+        recs_list = state.get("recommendations", {}).get("recommendations", [])
+        rec_text = "; ".join(r.get("action", "") for r in recs_list if isinstance(r, dict))
+        avg_conf = sum(float(r.get("confidence", 0.95)) for r in recs_list if isinstance(r, dict)) / max(1, len(recs_list))
+        BusinessMetricsService.end_session_tracking(session_id, rec_text, avg_conf)
+    except Exception as e:
+        print(f"[Planner] Metrics error ending session: {e}")
 
     print(f"[Planner] Workflow paused. Agents executed: {agent_names}")
     return _build_response(state)
@@ -212,6 +227,11 @@ def resume_workflow(session_id: str, rec_id: str, approved: bool) -> dict:
 
     if not approved:
         print("[Planner] Action rejected by user — skipping execution.")
+        try:
+            from metrics.business_metrics import BusinessMetricsService
+            BusinessMetricsService.record_approval(session_id, False)
+        except Exception as e:
+            print(f"[Planner] Metrics error recording rejection: {e}")
         return {"status": "rejected", "action": "Action was not approved."}
 
     # Step 4: ActionExecutorAgent — execute the approved action
@@ -230,6 +250,16 @@ def resume_workflow(session_id: str, rec_id: str, approved: bool) -> dict:
 
     # Update checkpoint with execution results
     _paused_states[session_id] = state
+
+    try:
+        from metrics.business_metrics import BusinessMetricsService
+        BusinessMetricsService.record_approval(session_id, True)
+        out_data = state.get("outcome_learning", {})
+        success = out_data.get("success", True)
+        outcome_str = f"Executed action. Health Delta: {out_data.get('before_score', 0)} -> {out_data.get('after_score', 0)}"
+        BusinessMetricsService.record_outcome(session_id, outcome_str, success)
+    except Exception as e:
+        print(f"[Planner] Metrics error recording outcome: {e}")
 
     print(f"[Planner] Workflow resumed and completed for session: {session_id}")
     return state.get("action_execution", {"status": "success", "action": "Action executed."})

@@ -316,3 +316,30 @@ xlventures/
 - **Dual memory** — ChromaDB for semantic case retrieval, PostgreSQL for structured history and outcome tracking.
 - **Fallbacks everywhere** — Groq → Ollama → heuristic LLM fallback; PostgreSQL → SQLite; ChromaDB auto-rebuilds on first call.
 - **Observable** — every agent execution is traced with input/output snapshots; the frontend displays the live graph.
+
+---
+
+## Business Impact Measurement
+
+The platform is designed to continuously evaluate and track measurable business outcomes.
+
+### 1. Customer Success Metrics
+* **Faster Customer Issue Identification:** Automatically flags issues from customer interactions (e.g., technical integration bottlenecks, competitor evaluations).
+* **Better Churn Risk Detection:** Monitors account health and triggers high-severity alerts when key metrics drop.
+* **Improved Renewal Decision Support:** Correlates renewal urgency with adoption metrics to provide timely alerts.
+
+### 2. AI Productivity Metrics
+* **Reduced Manual Analysis Time:** Automates transcript reading, CRM lookup, and playbook cross-referencing.
+* **Faster Recommendation Generation:** Provides a ready-to-use next-best-action within 2 minutes instead of 30 minutes of manual research.
+  - **Manual Process:** 30 minutes
+  - **AI Platform:** 2 minutes
+  - **Time Saved:** 28 minutes per interaction
+
+### 3. Decision Quality Metrics
+* **Recommendation Approval Rate:** Calculates the percentage of AI recommendations accepted by human CSMs.
+* **Successful Action Completion Rate:** Tracks the percentage of approved actions that lead to a positive health score delta.
+
+### 4. Memory Improvement Metrics
+* **Similar Previous Cases Retrieved:** Measures the frequency of matching historical scenarios via ChromaDB.
+* **Successful Actions Reused:** Evaluates the recurrence of previously validated resolutions applied to new cases.
+

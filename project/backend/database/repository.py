@@ -160,3 +160,50 @@ def update_customer_health(customer_id: str, new_health_score: int) -> None:
     query = "UPDATE customers SET health_score = %s WHERE customer_id = %s"
     _execute_query(query, (new_health_score, customer_id))
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BUSINESS METRICS REPOSITORY
+# ─────────────────────────────────────────────────────────────────────────────
+
+def add_business_metric(interaction_id: str, customer_id: str, recommendation: str,
+                        confidence_score: float, approval_status: str = 'pending',
+                        execution_status: str = 'pending', outcome: str = '') -> None:
+    """Insert a new business metric record, or update if it exists (upsert)."""
+    existing = _execute_query("SELECT id FROM business_metrics WHERE interaction_id = %s", (interaction_id,), fetch_one=True)
+    if existing:
+        query = """
+        UPDATE business_metrics
+        SET customer_id = %s, recommendation = %s, confidence_score = %s, approval_status = %s, execution_status = %s, outcome = %s
+        WHERE interaction_id = %s
+        """
+        _execute_query(query, (customer_id, recommendation, confidence_score, approval_status, execution_status, outcome, interaction_id))
+    else:
+        query = """
+        INSERT INTO business_metrics (interaction_id, customer_id, recommendation, confidence_score, approval_status, execution_status, outcome)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """
+        _execute_query(query, (interaction_id, customer_id, recommendation, confidence_score, approval_status, execution_status, outcome))
+
+
+def update_business_metric_status(interaction_id: str, approval_status: str, execution_status: str = None) -> None:
+    """Update approval status (and optional execution status) for a metric record."""
+    if execution_status:
+        query = "UPDATE business_metrics SET approval_status = %s, execution_status = %s WHERE interaction_id = %s"
+        _execute_query(query, (approval_status, execution_status, interaction_id))
+    else:
+        query = "UPDATE business_metrics SET approval_status = %s WHERE interaction_id = %s"
+        _execute_query(query, (approval_status, interaction_id))
+
+
+def update_business_metric_outcome(interaction_id: str, outcome: str, execution_status: str) -> None:
+    """Update outcome text and execution status for a metric record."""
+    query = "UPDATE business_metrics SET outcome = %s, execution_status = %s WHERE interaction_id = %s"
+    _execute_query(query, (outcome, execution_status, interaction_id))
+
+
+def get_all_business_metrics() -> List[Dict[str, Any]]:
+    """Retrieve all business metrics records."""
+    query = "SELECT * FROM business_metrics ORDER BY timestamp DESC"
+    return _execute_query(query, (), fetch=True)
+
+
