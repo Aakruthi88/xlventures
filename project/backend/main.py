@@ -1,8 +1,8 @@
 import os
 import sys
 import uuid
-from typing import List, Dict, Any
-from fastapi import FastAPI, HTTPException
+from typing import Optional
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -34,16 +34,21 @@ app.add_middleware(
 sessions = planner.sessions
 
 
-# Pydantic models for request bodies
+# ── Pydantic models ───────────────────────────────────────────────────────────
+
 class UploadTranscriptRequest(BaseModel):
     customer_id: str
     transcript_text: str
 
 
-class ApproveRequest(BaseModel):
+class ActionRequest(BaseModel):
     session_id: str
     recommendation_id: str
+    action: str = "approve"          # "approve" | "reject" | "edit"
+    edited_text: Optional[str] = None
 
+
+# ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.get("/")
 def read_root():
@@ -55,7 +60,7 @@ def upload_transcript(req: UploadTranscriptRequest):
     session_id = str(uuid.uuid4())
     sessions[session_id] = {
         "customer_id": req.customer_id,
-        "transcript_text": req.transcript_text
+        "transcript_text": req.transcript_text,
     }
     return {"session_id": session_id}
 
@@ -64,20 +69,32 @@ def upload_transcript(req: UploadTranscriptRequest):
 def get_recommendation(session_id: str):
     if session_id not in sessions:
         return JSONResponse(status_code=404, content={"error": "Session not found"})
-    
     result = planner.run(session_id)
     return result
 
 
 @app.post("/approve")
-def approve_recommendation(req: ApproveRequest):
+def approve_recommendation(req: ActionRequest):
+    """
+    Store a recommendation action.
+    Accepts action: "approve" | "reject" | "edit"
+    For "edit", edited_text should contain the revised recommendation text.
+    """
     if req.session_id not in sessions:
         return JSONResponse(status_code=404, content={"error": "Session not found"})
-    
+
+    valid_actions = {"approve", "reject", "edit"}
+    action = req.action.lower() if req.action else "approve"
+    if action not in valid_actions:
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"Invalid action '{action}'. Must be one of {sorted(valid_actions)}."},
+        )
+
     session = sessions[req.session_id]
     customer_id = session.get("customer_id")
-    
-    # Try to find the recommendation action data (best effort for stub)
+
+    # Resolve the recommendation payload from the session (best-effort)
     recommendation_data = {}
     try:
         planner_res = planner.run(req.session_id)
@@ -87,14 +104,32 @@ def approve_recommendation(req: ApproveRequest):
                 recommendation_data = r
                 break
     except Exception as e:
-        print(f"[API] Error resolving recommendation details for store_approval: {e}")
-        
-    memory_agent.store_approval(req.session_id, customer_id, recommendation_data)
-    return {"status": "approved"}
+        print(f"[API] Error resolving recommendation for session {req.session_id}: {e}")
+
+    memory_agent.store_action(
+        session_id=req.session_id,
+        customer_id=customer_id,
+        recommendation=recommendation_data,
+        action=action,
+        edited_text=req.edited_text,
+    )
+
+    return {"status": action}
 
 
 @app.get("/history/{customer_id}")
 def get_history(customer_id: str):
-    history = memory_agent.get_history(customer_id)
-    return history
+    """
+    Return all stored actions for a customer (approve, reject, edit),
+    newest first. Includes legacy approvals rows for backwards compatibility.
+    """
+    return memory_agent.get_history(customer_id)
 
+
+@app.get("/analytics")
+def get_analytics():
+    """
+    Return aggregate metrics computed from the recommendation_actions table.
+    Used by the Analytics dashboard to display real backend data.
+    """
+    return memory_agent.get_analytics()
