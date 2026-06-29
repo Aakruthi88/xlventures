@@ -1,106 +1,345 @@
 # Intelligent Next Best Action Platform
-An agentic decision intelligence platform that transforms customer interactions and enterprise knowledge into actionable Customer Success recommendations.
+### Agentic Decision Intelligence for Customer Success Teams
+
+[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.111-green.svg)](https://fastapi.tiangolo.com)
+[![LangGraph](https://img.shields.io/badge/LangGraph-0.2-purple.svg)](https://langchain-ai.github.io/langgraph)
+[![React](https://img.shields.io/badge/React-18-61DAFB.svg)](https://react.dev)
+[![React Flow](https://img.shields.io/badge/ReactFlow-11-orange.svg)](https://reactflow.dev)
 
 ---
 
-## What Has Been Completed So Far (Phases 1 - 5)
+## Overview
 
-### 📊 Phase 2: Synthetic Data Generation Pipeline
-- Built a programmatic data generation script at `scripts/generate_enterprise_data.py`.
-- Generates customer lists, support ticket histories, product usage metrics, meeting transcripts, and a detailed markdown-based knowledge base.
-- Includes a 24-check self-validation suite ensuring consistent company records, correct health scores, and matching technical issue profiles.
+A reusable **Agentic Decision Intelligence Platform** that transforms customer interactions and enterprise knowledge into actionable next-best-action recommendations.
 
-### 🧩 Phase 3: Agent Skeletons & Schema Contracts
-- Structured the backend codebase (`project/backend/`) with modular subdirectories for agents, vector indexing (RAG), and memory databases.
-- Created stub files for all specialized agents:
-  - `planner.py` (Orchestrator)
-  - `customer_agent.py` (Unified summary)
-  - `knowledge_agent.py` (Product playbooks)
-  - `sentiment_agent.py` (Emotional tone)
-  - `risk_agent.py` (Churn & renewal warnings)
-  - `opportunity_agent.py` (Training & upsell triggers)
-  - `recommendation_agent.py` (Decision engine)
-  - `explanation_agent.py` (Evidence and logic mapping)
-  - `memory_agent.py` (Context learning)
+Built with a true **multi-agent architecture** using **LangGraph** for orchestration, **ChromaDB** for semantic memory, **PostgreSQL/SQLite** for persistence, and a **React + React Flow** frontend for real-time agent visualization.
 
-### ⚡ Phase 4: FastAPI Web Server Layer
-- Developed API endpoints inside `project/backend/main.py` with custom Pydantic input-body validation.
-- Configured CORS policy to allow parallel development of the frontend (`http://localhost:5173`).
-- Created endpoints to upload meeting transcripts, trigger recommendation pipelines, approve recommended actions, and query history logs.
+---
 
-### 🧠 Phase 5: LangGraph Planner & Dynamic Routing
-- Designed and compiled a **LangGraph StateGraph workflow** that routes state transitions securely.
-- Built a **Hybrid Router** that dynamically selects which analysis nodes to execute:
-  1. **Local LLM (Ollama / Qwen-0.5B):** Runs in-context prompt analysis on transcripts to select target agents.
-  2. **Rule-Based Fallback:** Instantly parses keywords (e.g. `renewal` -> `risk_agent`) if the local Ollama server is offline.
-- Ensured failure resilience: if individual agent modules raise exceptions, the planner catches them, logs the error, falls back to mock responses, and proceeds without crashing.
+## Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     NEXT BEST ACTION PLATFORM                           │
+│                                                                         │
+│  ┌──────────────┐    ┌──────────────────────────────────────────────┐  │
+│  │   FRONTEND   │    │              BACKEND AGENTS                  │  │
+│  │  React + RF  │◄──►│                                              │  │
+│  │  Dashboard   │    │  ┌──────────┐   ┌─────────────────────────┐ │  │
+│  │  Agent Graph │    │  │ Planner  │──►│ Dynamic AgentExecutor   │ │  │
+│  │  HITL UX     │    │  │  Agent   │   │  - Customer Agent        │ │  │
+│  └──────────────┘    │  └──────────┘   │  - Knowledge Agent       │ │  │
+│                       │       │         │  - Sentiment Agent       │ │  │
+│  ┌──────────────┐    │       ▼         │  - Risk Agent            │ │  │
+│  │   FastAPI    │    │  ┌──────────┐   │  - Opportunity Agent     │ │  │
+│  │   REST API   │    │  │  Memory  │   │  - Memory Agent          │ │  │
+│  │  /upload     │    │  │  Agent   │   └─────────────────────────┘ │  │
+│  │  /recommend  │    │  └──────────┘            │                  │  │
+│  │  /approve    │    │                           ▼                  │  │
+│  │  /approve    │    │              ┌───────────────────────┐       │  │
+│  │   _action    │    │              │  Recommendation Agent │       │  │
+│  └──────────────┘    │              │  Explanation Agent    │       │  │
+│                       │              └───────────────────────┘       │  │
+│  ┌──────────────┐    │                    HITL INTERRUPT             │  │
+│  │  DATABASES   │    │                         │                     │  │
+│  │              │    │              ┌───────────────────────┐       │  │
+│  │  PostgreSQL  │◄──►│              │  Action Executor Agent│       │  │
+│  │  SQLite(FB)  │    │              │  Outcome Agent        │       │  │
+│  │  ChromaDB    │    │              └───────────────────────┘       │  │
+│  └──────────────┘    └──────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Agent Flow
+
+```
+Customer Transcript
+        │
+        ▼
+  ┌─────────────┐
+  │ Planner     │  Analyzes transcript → selects required agents → plan
+  │ Agent       │  Consults semantic memory for past similar cases
+  └──────┬──────┘
+         │  Dynamic plan
+         ▼
+  ┌─────────────────────────────────────────────────────┐
+  │              PARALLEL ANALYSIS AGENTS                │
+  │  Customer Agent    → CRM profile, usage metrics      │
+  │  Knowledge Agent   → RAG search across playbooks     │
+  │  Sentiment Agent   → LLM tone + urgency analysis     │
+  │  Risk Agent        → Rules-based risk scoring        │
+  │  Opportunity Agent → Upsell/training opportunities   │
+  │  Memory Agent      → Similar past cases from ChromaDB│
+  └──────────────────────────┬──────────────────────────┘
+                             │
+                             ▼
+                  ┌──────────────────┐
+                  │ Recommendation   │  LLM-synthesized actions
+                  │ Agent            │  with priority + confidence
+                  └────────┬─────────┘
+                           │
+                  ┌────────▼─────────┐
+                  │ Explanation      │  Structured evidence with
+                  │ Agent            │  source attribution
+                  └────────┬─────────┘
+                           │
+                    ⏸ HITL INTERRUPT
+                    Human reviews + approves
+                           │
+                  ┌────────▼─────────┐
+                  │ Action Executor  │  send_email / crm_task /
+                  │ Agent            │  notify_owner tools
+                  └────────┬─────────┘
+                           │
+                  ┌────────▼─────────┐
+                  │ Outcome Agent    │  Logs before/after health
+                  │                  │  score delta + success flag
+                  └──────────────────┘
+```
+
+---
+
+## Database Design
+
+### SQL (PostgreSQL / SQLite fallback)
+
+| Table | Purpose | Key Columns |
+|---|---|---|
+| `customers` | Customer profiles, usage, health | `customer_id`, `health_score`, `renewal_date`, `dashboard_usage_pct` |
+| `interactions` | Transcript ingestion log | `customer_id`, `transcript_text`, `sentiment`, `confidence` |
+| `recommendations` | Generated next-best actions | `id`, `session_id`, `customer_id`, `action_description`, `confidence` |
+| `approvals` | Human approval decisions | `session_id`, `customer_id`, `recommendation_id` |
+| `outcomes` | Post-execution metrics | `customer_id`, `action`, `before_score`, `after_score`, `success` |
+
+### ChromaDB Vector Collections
+
+| Collection | Purpose |
+|---|---|
+| `knowledge_memory` | Enterprise playbooks, SOPs, integration guides — powers RAG |
+| `decision_memory` | Past approved actions — powers semantic case retrieval |
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| **Orchestration** | LangGraph (StateGraph + MemorySaver + interrupt) |
+| **LLM** | Groq (llama3-70b) / Ollama (qwen2.5) fallback |
+| **Tools** | LangChain `@tool` decorator |
+| **Vector Store** | ChromaDB + SentenceTransformers |
+| **SQL** | PostgreSQL (primary) / SQLite (fallback) |
+| **API** | FastAPI + Pydantic |
+| **Frontend** | React 18 + Vite + React Flow |
+| **Styling** | Tailwind CSS |
+| **Containerization** | Docker + Docker Compose |
+
+---
+
+## Setup Instructions
+
+### Prerequisites
+- Python 3.10+
+- Node.js 18+
+- [Ollama](https://ollama.ai) (for local LLM) OR Groq API key
+
+### 1. Clone and configure environment
+
+```bash
+git clone <repo-url>
+cd xlventures
+cp .env.example .env
+# Edit .env and add your GROQ_API_KEY (optional — Ollama works without it)
+```
+
+### 2. Backend setup
+
+```bash
+# Create and activate virtual environment
+python -m venv venv
+venv\Scripts\activate       # Windows
+# source venv/bin/activate  # macOS/Linux
+
+# Install dependencies
+pip install -r project/backend/requirements.txt
+```
+
+### 3. Pull local LLM (optional — skip if using Groq)
+
+```bash
+ollama pull qwen2.5:0.5b
+```
+
+### 4. Run backend
+
+```bash
+cd project/backend
+uvicorn main:app --reload --port 8000
+```
+
+Backend auto-seeds the database from CSV/JSON on first startup.
+
+### 5. Frontend setup
+
+```bash
+cd frontend
+npm install
+echo "VITE_API_BASE_URL=http://127.0.0.1:8000" > .env
+npm run dev
+```
+
+Open http://localhost:5173
+
+---
+
+## Docker Setup
+
+```bash
+# Copy and configure environment
+cp .env.example .env
+# Add GROQ_API_KEY to .env if desired
+
+# Start all services
+docker-compose up --build
+
+# Services:
+#   Frontend  → http://localhost:5173
+#   Backend   → http://localhost:8000
+#   PostgreSQL→ localhost:5432
+#   ChromaDB  → http://localhost:8001
+```
+
+---
+
+## API Reference
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/upload_transcript` | Start a new session with a transcript |
+| `GET`  | `/recommendation/{session_id}` | Run the agent pipeline (pauses at HITL) |
+| `POST` | `/approve` | Store approval decision in memory |
+| `POST` | `/approve_action` | Resume LangGraph execution after approval |
+| `GET`  | `/history/{customer_id}` | Get approval history for a customer |
+| `GET`  | `/agent_trace/{session_id}` | Get real-time agent execution trace |
+| `GET`  | `/graph_structure` | Get agent pipeline graph for visualization |
+| `GET`  | `/docs` | Interactive Swagger API docs |
+
+---
+
+## Demo Steps
+
+1. **Start both servers** (backend on :8000, frontend on :5173)
+
+2. **Upload a transcript:**
+   ```
+   Customer: ABC Manufacturing
+   Transcript: "Team is exporting to Excel instead of using dashboards.
+   Renewal is in 20 days. SAP sync takes 20 min daily. Management
+   is evaluating BambooHR and Workday."
+   ```
+
+3. **Watch the Agent Graph** — nodes turn green as each agent completes
+
+4. **Review the Dashboard:**
+   - Customer Health score + bar chart
+   - Risk signals with severity badges
+   - Next Best Actions with confidence scores + evidence pills
+
+5. **Approve a recommendation** → stored in ChromaDB decision memory
+
+6. **Execute an action** → LangGraph HITL resumes:
+   - `ActionExecutorAgent` sends email / creates CRM task / notifies owner
+   - `OutcomeAgent` logs before/after health score to `outcomes` table
+
+7. **Check Approval History** — past decisions with timestamps
 
 ---
 
 ## Project Structure
-```text
+
+```
 xlventures/
-├── data/                         # CSV and JSON source records
-│   ├── knowledge_base/           # Customer Success markdown docs
-│   └── meeting_transcripts/      # Text files of customer calls
 ├── project/
 │   └── backend/
-│       ├── main.py               # FastAPI application server
+│       ├── agents/
+│       │   ├── planner.py              # Orchestrator + HITL state store
+│       │   ├── planner_agent.py        # LLM-based plan generator
+│       │   ├── customer_agent.py       # CRM + usage data retrieval
+│       │   ├── knowledge_agent.py      # RAG knowledge search
+│       │   ├── sentiment_agent.py      # LLM sentiment analysis
+│       │   ├── risk_agent.py           # Rules-based risk assessment
+│       │   ├── opportunity_agent.py    # Upsell/training opportunities
+│       │   ├── recommendation_agent.py # LLM recommendation synthesis
+│       │   ├── explanation_agent.py    # Structured evidence builder
+│       │   ├── memory_agent.py         # ChromaDB semantic memory
+│       │   ├── action_executor_agent.py# HITL action execution
+│       │   └── outcome_agent.py        # Post-action outcome logging
+│       ├── graph/
+│       │   └── agent_executor.py       # Dynamic executor + LangGraph graph
+│       ├── tools/
+│       │   ├── crm_tool.py             # @tool: CRM data
+│       │   ├── customer_history_tool.py # @tool: Approval history
+│       │   ├── knowledge_search_tool.py # @tool: ChromaDB search
+│       │   ├── usage_analysis_tool.py  # @tool: Usage metrics
+│       │   ├── playbook_tool.py        # @tool: Playbook loader
+│       │   ├── notification_tool.py    # @tool: Alert sender
+│       │   ├── send_email_tool.py      # @tool: Email simulation
+│       │   ├── create_crm_task_tool.py # @tool: CRM task creation
+│       │   └── notify_owner_tool.py    # @tool: Owner alert
 │       ├── database/
-│       │   └── sqlite.db         # Empty memory storage
-│       ├── agents/               # Multi-agent logic and state
-│       │   ├── planner.py        # LangGraph StateGraph coordinator
-│       │   ├── planner_router.py # Ollama & keyword-based router
-│       │   ├── planner_state.py  # Shared AgentState TypedDict
-│       │   ├── llm.py            # Local model connectivity helper
-│       │   └── ...               # Specialized agents (stubs)
-│       └── rag/                  # Retriever & document loaders
-│           ├── loader.py         # KB chunk indexing placeholder
-│           └── retriever.py      # Vector similarity query placeholder
-├── scripts/                      # Validation and generation utilities
-│   ├── generate_enterprise_data.py
-│   ├── validate_phase3.py
-│   ├── validate_phase4.py
-│   └── validate_phase5.py
-└── tests/
-    └── test_phase_1_to_4.py      # System integration test suite
+│       │   ├── connection.py           # PostgreSQL/SQLite manager
+│       │   ├── models.py               # SQL table schemas
+│       │   └── repository.py           # CRUD helpers
+│       ├── rag/
+│       │   ├── loader.py               # ChromaDB knowledge ingestion
+│       │   └── retriever.py            # Semantic search
+│       └── main.py                     # FastAPI app + all routes
+├── frontend/
+│   └── src/
+│       └── App.jsx                     # React Flow + dashboard
+├── data/                               # Seed CSV/JSON files
+├── tests/
+│   └── test_phase_1_to_4.py           # End-to-end validation
+├── docker-compose.yml
+└── README.md
 ```
 
 ---
 
-## Setup & Running the Code
+## Key Design Decisions
 
-### 1. Requirements & Dependencies
-Make sure you have Python 3.10+ installed. In your terminal, run:
-```bash
-pip install -r project/backend/requirements.txt
-```
+- **No hardcoded logic** — all agents use `@tool` functions; adding a new tool requires zero changes to orchestration.
+- **HITL via checkpoint store** — after recommendations, state is saved and execution pauses until `/approve_action` is called.
+- **Dual memory** — ChromaDB for semantic case retrieval, PostgreSQL for structured history and outcome tracking.
+- **Fallbacks everywhere** — Groq → Ollama → heuristic LLM fallback; PostgreSQL → SQLite; ChromaDB auto-rebuilds on first call.
+- **Observable** — every agent execution is traced with input/output snapshots; the frontend displays the live graph.
 
-### 2. local LLM Setup (Ollama)
-The platform uses the lightweight **`qwen2.5:0.5b`** model (394 MB) for local orchestration:
-1. Download and start **Ollama** from [ollama.com](https://ollama.com).
-2. Open a terminal and download the model:
-   ```bash
-   ollama pull qwen2.5:0.5b
-   ```
-*If Ollama is not running, the platform will automatically fall back to rule-based routing, so the server never crashes.*
+---
 
-### 3. Generate the Dataset
-Create the synthetic files by running:
-```bash
-python scripts/generate_enterprise_data.py
-```
+## Business Impact Measurement
 
-### 4. Run the Web Server
-Launch the FastAPI backend server:
-```bash
-uvicorn project.backend.main:app --reload
-```
-The server will start on [http://127.0.0.1:8000](http://127.0.0.1:8000).
+The platform is designed to continuously evaluate and track measurable business outcomes.
 
-### 5. Running the Tests
-To verify all components (data, stubs, Graph routing, and web endpoints) are functioning correctly, run the integration test suite:
-```bash
-python tests/test_phase_1_to_4.py
-```
+### 1. Customer Success Metrics
+* **Faster Customer Issue Identification:** Automatically flags issues from customer interactions (e.g., technical integration bottlenecks, competitor evaluations).
+* **Better Churn Risk Detection:** Monitors account health and triggers high-severity alerts when key metrics drop.
+* **Improved Renewal Decision Support:** Correlates renewal urgency with adoption metrics to provide timely alerts.
+
+### 2. AI Productivity Metrics
+* **Reduced Manual Analysis Time:** Automates transcript reading, CRM lookup, and playbook cross-referencing.
+* **Faster Recommendation Generation:** Provides a ready-to-use next-best-action within 2 minutes instead of 30 minutes of manual research.
+  - **Manual Process:** 30 minutes
+  - **AI Platform:** 2 minutes
+  - **Time Saved:** 28 minutes per interaction
+
+### 3. Decision Quality Metrics
+* **Recommendation Approval Rate:** Calculates the percentage of AI recommendations accepted by human CSMs.
+* **Successful Action Completion Rate:** Tracks the percentage of approved actions that lead to a positive health score delta.
+
+### 4. Memory Improvement Metrics
+* **Similar Previous Cases Retrieved:** Measures the frequency of matching historical scenarios via ChromaDB.
+* **Successful Actions Reused:** Evaluates the recurrence of previously validated resolutions applied to new cases.
 

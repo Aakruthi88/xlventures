@@ -252,26 +252,8 @@ function prioritySortValue(priority) {
   return PRIORITY_ORDER[(priority || '').toLowerCase()] ?? 99;
 }
 
-// Normalise an evidence item to a plain string.
-// The new agentic backend returns evidence as [{source, data}] objects;
-// the old format was plain strings. Both are handled here.
-function evidenceToString(item) {
-  if (!item) return '';
-  if (typeof item === 'string') return item;
-  if (typeof item === 'object') {
-    // {source, data} shape from the new ExplanationAgent
-    const parts = [];
-    if (item.source) parts.push(String(item.source));
-    if (item.data)   parts.push(String(item.data));
-    return parts.join(': ');
-  }
-  return String(item);
-}
-
 // Classify a single evidence string into a source bucket using keyword heuristics
-function classifyEvidence(item) {
-  const text = evidenceToString(item);
-  if (!text) return null;
+function classifyEvidence(text) {
   const t = text.toLowerCase();
   if (t.includes('transcript') || t.includes('meeting') || t.includes('call') || t.includes('said') || t.includes('mentioned') || t.includes('customer stated')) return 'Meeting Transcript';
   if (t.includes('crm') || t.includes('owner') || t.includes('champion') || t.includes('last meeting') || t.includes('account')) return 'CRM';
@@ -280,20 +262,17 @@ function classifyEvidence(item) {
   return null; // ungrouped
 }
 
-// Group evidence items into source buckets; uncategorised items go into a general list.
-// Each item is normalised to a string before classification and storage.
+// Group evidence strings into source buckets; uncategorised items go into a general list
 function groupEvidence(evidenceList) {
   const buckets = {};
   const ungrouped = [];
-  for (const item of (evidenceList || [])) {
-    const str = evidenceToString(item);
-    if (!str) continue;
-    const bucket = classifyEvidence(str);
+  for (const item of evidenceList) {
+    const bucket = classifyEvidence(item);
     if (bucket) {
       if (!buckets[bucket]) buckets[bucket] = [];
-      buckets[bucket].push(str);
+      buckets[bucket].push(item);
     } else {
-      ungrouped.push(str);
+      ungrouped.push(item);
     }
   }
   return { buckets, ungrouped };
@@ -356,16 +335,16 @@ function RecommendationCard({ rec, idx, explanation, sessionId, onToast }) {
     if (isDone || isApproving) return;
     setIsApproving(true);
     try {
-      const res = await fetch(buildApiUrl('/approve_action'), {
+      const res = await fetch(buildApiUrl('/approve'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId, recommendation_id: rec.id, approved: true }),
+        body: JSON.stringify({ session_id: sessionId, recommendation_id: rec.id, action: 'approve' }),
       });
       if (!res.ok) throw new Error(`Server responded ${res.status}`);
       setReviewStatus('approved');
-      onToast({ type: 'success', message: `Approved & Executed: ${savedText.slice(0, 60)}${savedText.length > 60 ? '...' : ''}` });
+      onToast({ type: 'success', message: `Approved: ${savedText.slice(0, 60)}${savedText.length > 60 ? '...' : ''}` });
     } catch (err) {
-      onToast({ type: 'error', message: `Approval/Execution failed: ${err.message}` });
+      onToast({ type: 'error', message: `Approval failed: ${err.message}` });
     } finally {
       setIsApproving(false);
     }
@@ -374,16 +353,17 @@ function RecommendationCard({ rec, idx, explanation, sessionId, onToast }) {
   // Reject 
   async function handleReject() {
     if (isDone) return;
+    // Optimistic update immediately so the UI feels instant
     setReviewStatus('rejected');
-    onToast({ type: 'error', message: `Rejected: ${savedText.slice(0, 60)}${savedText.length > 60 ? '...' : ''}` });
+    onToast({ type: 'error', message: `- Rejected: ${savedText.slice(0, 60)}${savedText.length > 60 ? '...' : ''}` });
     try {
-      await fetch(buildApiUrl('/approve_action'), {
+      await fetch(buildApiUrl('/approve'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId, recommendation_id: rec.id, approved: false }),
+        body: JSON.stringify({ session_id: sessionId, recommendation_id: rec.id, action: 'reject' }),
       });
     } catch {
-      // Non-critical
+      // Non-critical: UI state already updated
     }
   }
 
@@ -581,7 +561,7 @@ function RecommendationCard({ rec, idx, explanation, sessionId, onToast }) {
             <>
               {/* Reason + confidence */}
               <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                <p className="text-sm leading-relaxed text-slate-700 max-w-2xl">{explanation.reason || explanation.reasoning}</p>
+                <p className="text-sm leading-relaxed text-slate-700 max-w-2xl">{explanation.reason}</p>
                 {explanation.confidence != null ? (
                   <span className="shrink-0 mt-1 sm:mt-0 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 self-start">
                     {Math.round(explanation.confidence * 100)}% confidence
@@ -667,14 +647,8 @@ function AnalysisResults({ analysisResult, analysisCustomerId, activeSessionId, 
     healthScore !== null || risks.length > 0 || recommendations.length > 0
   );
 
-  // Build a map from recommendation_id -> explanation for the explainability section.
-  // Defensively filter out any null/undefined entries or entries without a recommendation_id
-  // to prevent crashes when the backend returns unexpected shapes.
-  const explainMap = Object.fromEntries(
-    (explanations || [])
-      .filter((e) => e && typeof e === 'object' && e.recommendation_id)
-      .map((e) => [e.recommendation_id, e])
-  );
+  // Build a map from recommendation_id -> explanation for the explainability section
+  const explainMap = Object.fromEntries(explanations.map((e) => [e.recommendation_id, e]));
 
   // Toast queue 
   const [toasts, setToasts] = useState([]);
@@ -684,46 +658,6 @@ function AnalysisResults({ analysisResult, analysisCustomerId, activeSessionId, 
     setToasts((prev) => [...prev, { id, type, message }]);
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3500);
   }
-
-  const [trace, setTrace] = useState([]);
-  useEffect(() => {
-    if (!activeSessionId) return;
-    async function fetchTrace() {
-      try {
-        const res = await fetch(buildApiUrl(`/agent_trace/${activeSessionId}`));
-        if (res.ok) {
-          const data = await res.json();
-          setTrace(data.trace || []);
-        }
-      } catch (err) {
-        console.error('Error fetching trace:', err);
-      }
-    }
-    fetchTrace();
-  }, [activeSessionId]);
-
-  const timelineSteps = useMemo(() => {
-    const agents = [
-      { id: 'planner_agent', name: 'Planner Agent' },
-      { id: 'customer_agent', name: 'Customer Agent' },
-      { id: 'knowledge_agent', name: 'Knowledge Agent' },
-      { id: 'sentiment_agent', name: 'Sentiment Agent' },
-      { id: 'risk_agent', name: 'Risk Agent' },
-      { id: 'opportunity_agent', name: 'Opportunity Agent' },
-      { id: 'recommendation_agent', name: 'Decision Agent' },
-    ];
-    
-    return agents.map(agent => {
-      const entry = trace.find(t => t.agent_name === agent.id);
-      let status = 'Pending';
-      if (entry) {
-        if (entry.status === 'completed') status = 'Completed';
-        if (entry.status === 'running') status = 'Running';
-        if (entry.status === 'failed') status = 'Failed';
-      }
-      return { name: agent.name, status };
-    });
-  }, [trace]);
 
   return (
     <div className="space-y-6">
@@ -747,49 +681,6 @@ function AnalysisResults({ analysisResult, analysisCustomerId, activeSessionId, 
           </button>
         </div>
       </div>
-
-      {/* Agent Execution Timeline */}
-      {activeSessionId && (
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200/70">
-          <p className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Agent Execution Timeline</p>
-          <div className="flex flex-col gap-2">
-            {timelineSteps.map((step, i) => {
-              const isCompleted = step.status === 'Completed';
-              const isRunning = step.status === 'Running';
-              const isFailed = step.status === 'Failed';
-              return (
-                <div
-                  key={step.name}
-                  className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm transition-all duration-500 ${
-                    isCompleted ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                    : isRunning ? 'border-sky-200 bg-sky-50 text-sky-700'
-                    : isFailed ? 'border-rose-200 bg-rose-50 text-rose-700'
-                    : 'border-slate-200 bg-slate-50 text-slate-500'
-                  }`}
-                >
-                  <span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ${
-                    isCompleted ? 'bg-emerald-600 text-white'
-                    : isRunning ? 'bg-sky-600 text-white'
-                    : isFailed ? 'bg-rose-600 text-white'
-                    : 'bg-slate-200 text-slate-500'
-                  }`}>
-                    {isCompleted ? '✓' : isFailed ? '✗' : i + 1}
-                  </span>
-                  <span className="flex-1 font-medium">{step.name}</span>
-                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                    isCompleted ? 'bg-emerald-100 text-emerald-700'
-                    : isRunning ? 'bg-sky-100 text-sky-700 animate-pulse'
-                    : isFailed ? 'bg-rose-100 text-rose-700'
-                    : 'bg-slate-100 text-slate-500'
-                  }`}>
-                    {step.status}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {/*  No analysis guard  */}
       {!hasAnalysisData ? (
@@ -957,8 +848,8 @@ function AnalysisResults({ analysisResult, analysisCustomerId, activeSessionId, 
                   
                   <div className="min-w-0">
                     <p className="font-semibold text-slate-800 text-sm">{sourceName(doc)}</p>
-                    {(doc.content || doc.snippet) ? (
-                      <p className="mt-1 text-xs leading-relaxed text-slate-500 line-clamp-2">{String(doc.content || doc.snippet).slice(0, 160)}{String(doc.content || doc.snippet).length > 160 ? '...' : ''}</p>
+                    {doc.content ? (
+                      <p className="mt-1 text-xs leading-relaxed text-slate-500 line-clamp-2">{String(doc.content).slice(0, 160)}{String(doc.content).length > 160 ? '...' : ''}</p>
                     ) : null}
                   </div>
                 </li>
@@ -1623,25 +1514,7 @@ export default function App() {
   const location = useLocation();
   const navigate = useNavigate();
   const { customer_id } = useParams();
-  const [customers, setCustomers] = useState(() => parseCustomers(customersCsv, usageCsv, crmData));
-
-  // Fetch live customers from API (falls back to static CSV data if API unavailable)
-  useEffect(() => {
-    async function loadCustomers() {
-      try {
-        const res = await fetch(buildApiUrl('/customers'));
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data) && data.length > 0) {
-            setCustomers(data);
-          }
-        }
-      } catch {
-        // Keep static fallback silently
-      }
-    }
-    loadCustomers();
-  }, []);
+  const customers = useMemo(() => parseCustomers(customersCsv, usageCsv, crmData), []);
   const [analysisMode, setAnalysisMode] = useState('paste');
   const [uploadedTranscriptText, setUploadedTranscriptText] = useState('');
   const [pastedTranscriptText, setPastedTranscriptText] = useState('');

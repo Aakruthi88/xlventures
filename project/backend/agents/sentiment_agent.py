@@ -4,8 +4,12 @@ Sentiment Agent
 Analyzes the sentiment of customer meeting transcripts using LLM.
 
 Phase 8: Uses local LLM via llm.py for real sentiment analysis.
+Refactored: Inherits from BaseAgent for dynamic orchestration.
 """
 
+from typing import Any, Dict, List
+
+from agents.base_agent import BaseAgent
 from agents.llm import query_llm_json
 
 # Fallback mock response in case of LLM query or parsing failure
@@ -20,7 +24,35 @@ DEFAULT_FALLBACK = {
 }
 
 
-def analyze(transcript_text: str) -> dict:
+class SentimentAgent(BaseAgent):
+    """
+    Analyzes emotional tone and satisfaction signals in
+    customer meeting transcripts.
+    """
+
+    def __init__(self):
+        super().__init__(
+            name="sentiment_agent",
+            description="Analyzes emotional tone and satisfaction signals in customer interactions.",
+            tools=[]
+        )
+
+    def execute(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute sentiment analysis.
+
+        Args:
+            state: Must contain 'transcript_text'.
+
+        Returns:
+            Dict with 'sentiment' key.
+        """
+        transcript_text = state.get("transcript_text", "")
+        result = _analyze(transcript_text)
+        return {"sentiment": result}
+
+
+def _analyze(transcript_text: str) -> dict:
     """
     Analyze sentiment of a customer meeting transcript.
 
@@ -55,11 +87,11 @@ def analyze(transcript_text: str) -> dict:
 
     try:
         result = query_llm_json(user_prompt, system_prompt)
-        
+
         # Verify keys and validate sentiment type
         sentiment = result.get("sentiment")
         valid_sentiments = {"Positive", "Neutral", "Negative", "Urgent"}
-        
+
         if not sentiment or sentiment not in valid_sentiments:
             # Try parsing case-insensitively or title casing it
             if sentiment and sentiment.title() in valid_sentiments:
@@ -85,7 +117,13 @@ def analyze(transcript_text: str) -> dict:
         return result
 
     except Exception as e:
-        print(f"[Sentiment Agent] LLM analysis failed or returned malformed data: {e}")
-        print("[Sentiment Agent] Returning fallback mock response.")
+        print(f"[SentimentAgent] LLM analysis failed or returned malformed data: {e}")
+        print("[SentimentAgent] Returning fallback mock response.")
         return DEFAULT_FALLBACK
 
+
+# ── Module-level backward-compatible function ─────────────────────────────────
+
+def analyze(transcript_text: str) -> dict:
+    """Backward-compatible wrapper."""
+    return _analyze(transcript_text)

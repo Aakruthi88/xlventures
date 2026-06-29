@@ -1,94 +1,90 @@
 """
 Customer Agent
 ==============
-Retrieves and aggregates customer data from multiple sources
-(customers.csv, usage.csv, crm.json, support_tickets.csv).
+Retrieves and aggregates customer profile and usage data from the SQL database
+using reusable LangChain tools.
 
-Phase 6: Loads real data from CSV/JSON files.
+Refactored: Uses crm_tool and usage_analysis_tool. No direct file or DB access.
 """
 
-import os
-from pathlib import Path
-from datetime import datetime
-import pandas as pd
+from typing import Any, Dict, List
 
-# Global variables for caching
-_merged_df = None
-_base_date = None
+from agents.base_agent import BaseAgent
+from tools.crm_tool import get_crm_details
+from tools.usage_analysis_tool import analyze_usage_metrics
 
 
-def _load_data():
+class CustomerAgent(BaseAgent):
     """
-    Load data from customers.csv, usage.csv, and crm.json,
-    cache them, and perform a join across the datasets.
+    Retrieves and aggregates customer profile and usage data
+    using registered LangChain tools.
     """
-    global _merged_df, _base_date
-    if _merged_df is None:
-        # Determine the absolute data directory path relative to this agent file
-        # (project/backend/agents/customer_agent.py -> 4 levels up to workspace root)
-        data_dir = Path(__file__).resolve().parents[3] / "data"
 
-        # Load datasets using pandas
-        customers_df = pd.read_csv(data_dir / "customers.csv")
-        usage_df = pd.read_csv(data_dir / "usage.csv")
-        crm_df = pd.read_json(data_dir / "crm.json")
+    def __init__(self):
+        super().__init__(
+            name="customer_agent",
+            description="Retrieves customer profile, usage metrics, and CRM data using tools.",
+            tools=[get_crm_details, analyze_usage_metrics]
+        )
 
-        # Determine reference date for calculating days_to_renewal dynamically
-        # from the maximum last_login_date in crm.json (generation timestamp proxy)
+    def execute(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute customer data retrieval using tools.
+
+        Args:
+            state: Must contain 'customer_id'.
+
+        Returns:
+            Dict with 'customer_summary' key containing the aggregated details.
+        """
+        customer_id = state.get("customer_id", "C001")
         try:
-            login_dates = pd.to_datetime(crm_df["last_login_date"])
-            _base_date = login_dates.max().date()
-        except Exception:
-            _base_date = datetime.now().date()
+            # 1. Fetch CRM details using the crm_tool
+            crm_res = get_crm_details.invoke({"customer_id": customer_id})
 
-        # Align column casing for joining (crm.json uses 'company', others use 'Company')
-        crm_df = crm_df.rename(columns={"company": "Company"})
+            # 2. Fetch usage metrics using the usage_analysis_tool
+            usage_res = analyze_usage_metrics.invoke({"customer_id": customer_id})
 
-        # Perform a left join across the datasets using pandas
-        _merged_df = customers_df.merge(usage_df, on="Company", how="left").merge(crm_df, on="Company", how="left")
+            # 3. Aggregate details
+            summary = {
+                "customer_id": customer_id,
+                "company": crm_res.get("company", ""),
+                "plan": crm_res.get("plan", ""),
+                "industry": crm_res.get("industry", ""),
+                "renewal_date": crm_res.get("renewal_date", ""),
+                "days_to_renewal": usage_res.get("days_to_renewal", 0),
+                "health_score": crm_res.get("health_score", 0),
+                "licensed_users": usage_res.get("licensed_users", 0),
+                "active_users": usage_res.get("active_users", 0),
+                "dashboard_usage_pct": usage_res.get("dashboard_usage_pct", 0),
+                "api_calls": usage_res.get("api_calls", 0),
+                "open_support_tickets": crm_res.get("open_support_tickets", 0),
+                "owner": crm_res.get("owner", "")
+            }
+            return {"customer_summary": summary}
+        except Exception as e:
+            print(f"[CustomerAgent] Failed: {e}")
+            return {"customer_summary": {}}
 
+
+# ── Module-level backward-compatible function ─────────────────────────────────
 
 def get_summary(customer_id: str) -> dict:
-    """
-    Get a unified customer summary by aggregating data from
-    customers.csv, usage.csv, and crm.json.
-
-    Args:
-        customer_id: The customer identifier (e.g., "C001")
-
-    Returns:
-        dict matching CustomerSummary schema
-    """
-    _load_data()
-
-    # Query the joined dataframe for the requested CustomerID
-    row = _merged_df[_merged_df["CustomerID"] == customer_id]
-    if row.empty:
-        raise ValueError(f"Customer ID {customer_id} not found in database.")
-
-    record = row.iloc[0]
-
-    # Calculate days to renewal based on the anchor base date
-    renewal_date_str = str(record["RenewalDate"])
-    try:
-        renewal_date = pd.to_datetime(renewal_date_str).date()
-        days_to_renewal = (renewal_date - _base_date).days
-    except Exception:
-        days_to_renewal = 0
-
+    """Backward-compatible wrapper. Calls tools directly."""
+    crm_res = get_crm_details.invoke({"customer_id": customer_id})
+    usage_res = analyze_usage_metrics.invoke({"customer_id": customer_id})
     return {
-        "customer_id": str(record["CustomerID"]),
-        "company": str(record["Company"]),
-        "plan": str(record["Plan"]),
-        "industry": str(record["Industry"]),
-        "renewal_date": renewal_date_str,
-        "days_to_renewal": int(days_to_renewal),
-        "health_score": int(record["HealthScore"]),
-        "licensed_users": int(record["LicensedUsers"]) if pd.notna(record["LicensedUsers"]) else 0,
-        "active_users": int(record["ActiveUsers"]) if pd.notna(record["ActiveUsers"]) else 0,
-        "dashboard_usage_pct": int(record["DashboardUsagePct"]) if pd.notna(record["DashboardUsagePct"]) else 0,
-        "api_calls": int(record["APICalls"]) if pd.notna(record["APICalls"]) else 0,
-        "open_support_tickets": int(record["support_tickets_open"]) if pd.notna(record["support_tickets_open"]) else 0,
-        "owner": str(record["customer_owner"]) if pd.notna(record["customer_owner"]) else ""
+        "customer_id": customer_id,
+        "company": crm_res.get("company", ""),
+        "plan": crm_res.get("plan", ""),
+        "industry": crm_res.get("industry", ""),
+        "renewal_date": crm_res.get("renewal_date", ""),
+        "days_to_renewal": usage_res.get("days_to_renewal", 0),
+        "health_score": crm_res.get("health_score", 0),
+        "licensed_users": usage_res.get("licensed_users", 0),
+        "active_users": usage_res.get("active_users", 0),
+        "dashboard_usage_pct": usage_res.get("dashboard_usage_pct", 0),
+        "api_calls": usage_res.get("api_calls", 0),
+        "open_support_tickets": crm_res.get("open_support_tickets", 0),
+        "owner": crm_res.get("owner", "")
     }
-
